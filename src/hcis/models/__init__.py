@@ -22,6 +22,7 @@ from hcis.models.evidence import (
     SponsorshipEvidence,
 )
 from hcis.models.job import Job, JobRoleLabel, JobSource, JobVersion, SearchQueryFingerprint
+from hcis.models.scoring import CandidateJobScore, CoupleJobCombination
 from hcis.models.source import (
     LcaCase,
     PermCase,
@@ -37,12 +38,14 @@ __all__ = [
     "CandidateExperience",
     "CandidatePreference",
     "CandidateSkill",
+    "CandidateJobScore",
     "Company",
     "CompanyAlias",
     "CompanyMatchReview",
     "CompanyRelationship",
     "CompanySourceIdentifier",
     "CoverageObservationRecord",
+    "CoupleJobCombination",
     "EVerifyEvidence",
     "HumanReviewRecord",
     "HumanReviewTask",

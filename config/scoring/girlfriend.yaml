@@ -1,0 +1,11 @@
+candidate_id: girlfriend
+algorithm_version: girlfriend-v1
+weights:
+  identity_path_score: 45
+  degree_role_relation_score: 15
+  offer_feasibility_score: 15
+  role_preference_score: 8
+  communication_fit_score: 7
+  company_quality_score: 5
+  location_score: 3
+  compensation_score: 2

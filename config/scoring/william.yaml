@@ -1,0 +1,9 @@
+candidate_id: william
+algorithm_version: william-v1
+weights:
+  identity_path_score: 45
+  role_fit_score: 25
+  company_and_growth_score: 15
+  experience_feasibility_score: 7
+  location_score: 5
+  compensation_score: 3

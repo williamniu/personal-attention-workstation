@@ -10,7 +10,8 @@ Last updated: 2026-08-07
 | M3 Company entity resolution | COMPLETE | 13 cumulative tests; deterministic/non-merge cases |
 | M4 Realtime job collection | COMPLETE (live boards blocked) | 21 cumulative tests; 4 ATS + career fixture |
 | M5 Sponsorship evidence engine | COMPLETE (live LLM blocked) | 28 cumulative tests; safety semantics |
-| M6–M11 | NOT STARTED | — |
+| M6 Candidate scoring and reports | COMPLETE | 34 cumulative tests; isolated reports/exports |
+| M7–M11 | NOT STARTED | — |
 
 ## External constraints
 
@@ -66,3 +67,10 @@ Last updated: 2026-08-07
 - Initial USCIS + LCA is `LIKELY`, never confirmed first-available.
 - Rule/LLM conflicts require review; repeated structured inputs hit cache.
 - Current human review remains authoritative; new conflicts set re-review without overwrite.
+
+## M6 verification
+
+- The same job produces different William and Girlfriend component sets and totals.
+- Unknown high-fit jobs keep a nonzero identity score and enter `P1_APPLY_AND_VERIFY`.
+- Explicit no-sponsorship jobs hard-reject before weighted scoring.
+- Candidate reports/exports reject cross-candidate rows; couple bonus is capped at five.
