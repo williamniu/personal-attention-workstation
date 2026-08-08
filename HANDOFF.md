@@ -22,7 +22,7 @@ does not mean live data was fetched.
 ## Current commands
 
 ```bash
-cd ~/h1b-career-intelligence
+cd /Users/williamniu/AI/projects/h1b-career-intelligence
 uv sync
 ./bin/jobintel doctor
 ./bin/jobintel start

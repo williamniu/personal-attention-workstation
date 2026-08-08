@@ -3,7 +3,7 @@
 ## First setup
 
 ```bash
-cd ~/h1b-career-intelligence
+cd /Users/williamniu/AI/projects/h1b-career-intelligence
 uv sync
 cp .env.example .env
 ./bin/jobintel doctor

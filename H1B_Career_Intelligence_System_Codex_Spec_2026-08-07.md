@@ -5,7 +5,7 @@
 **版本：** 1.0  
 **日期：** 2026-08-07  
 **项目所有者：** William  
-**默认代码库路径：** `~/h1b-career-intelligence`  
+**默认代码库路径：** `/Users/williamniu/AI/projects/h1b-career-intelligence`
 **默认运行主机：** 24/7 开机的 MacBook Air  
 **默认访问方式：** MacBook Pro 经本地网络或 Tailscale/Headscale 访问  
 **交付性质：** 本地优先、双候选人、增量运行、证据驱动、人机协作的求职情报系统
