@@ -22,6 +22,7 @@ from hcis.models.evidence import (
     SponsorshipEvidence,
 )
 from hcis.models.job import Job, JobRoleLabel, JobSource, JobVersion, SearchQueryFingerprint
+from hcis.models.runtime import AuditLog, SystemStateRecord
 from hcis.models.scoring import CandidateJobScore, CoupleJobCombination
 from hcis.models.source import (
     LcaCase,
@@ -33,6 +34,7 @@ from hcis.models.source import (
 )
 
 __all__ = [
+    "AuditLog",
     "Candidate",
     "CandidateDocument",
     "CandidateExperience",
@@ -62,5 +64,6 @@ __all__ = [
     "SearchQueryFingerprint",
     "SponsorshipAssessmentRecord",
     "SponsorshipEvidence",
+    "SystemStateRecord",
     "UscisEmployerMetric",
 ]

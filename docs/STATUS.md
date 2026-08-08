@@ -11,7 +11,8 @@ Last updated: 2026-08-07
 | M4 Realtime job collection | COMPLETE (live boards blocked) | 21 cumulative tests; 4 ATS + career fixture |
 | M5 Sponsorship evidence engine | COMPLETE (live LLM blocked) | 28 cumulative tests; safety semantics |
 | M6 Candidate scoring and reports | COMPLETE | 34 cumulative tests; isolated reports/exports |
-| M7–M11 | NOT STARTED | — |
+| M7 Dashboard and human review | COMPLETE | 36 cumulative tests; token + durable audit |
+| M8–M11 | NOT STARTED | — |
 
 ## External constraints
 
@@ -74,3 +75,10 @@ Last updated: 2026-08-07
 - Unknown high-fit jobs keep a nonzero identity score and enter `P1_APPLY_AND_VERIFY`.
 - Explicit no-sponsorship jobs hard-reject before weighted scoring.
 - Candidate reports/exports reject cross-candidate rows; couple bonus is capped at five.
+
+## M7 verification
+
+- Dashboard exposes all 18 specified navigation pages and working Evidence/Review/Control views.
+- Protected API endpoints reject missing tokens.
+- Human reviews persist locally when PostgreSQL is unavailable and emit append-only audit entries.
+- Source health displays blockers rather than empty-success states.
