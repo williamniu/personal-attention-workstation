@@ -14,4 +14,3 @@ def test_desired_state_survives_new_store_instance(tmp_path: Path) -> None:
 
 def test_default_state_is_stopped(tmp_path: Path) -> None:
     assert StateStore(tmp_path / "missing.json").read()["desired_state"] == "STOPPED"
-

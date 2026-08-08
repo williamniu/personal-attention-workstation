@@ -1,0 +1,50 @@
+candidate_id: william
+display_name: William
+graduation: "2026-12"
+stem_opt_eligible: true
+cpt_before_graduation: true
+first_available_h1b_lottery_required: true
+profile_version: 1
+education:
+  institution: University of Chicago
+  program: null
+experience: []
+location_priority:
+  - New York
+  - Chicago
+  - San Francisco Bay Area
+  - Seattle
+  - Boston
+  - Austin
+  - Other US
+role_tiers:
+  tier_1:
+    - LLM Engineer
+    - AI Agent Engineer
+    - Generative AI Engineer
+    - RAG Engineer
+    - Applied AI Engineer
+    - AI Product Engineer
+    - AI Platform Engineer
+    - MLOps / LLMOps Engineer
+    - Inference Engineer
+    - AI Solutions Engineer
+    - AI Solutions Architect
+    - AI Consultant
+    - Forward Deployed Engineer
+  tier_2:
+    - Machine Learning Engineer
+    - Software Engineer - AI / Backend / Platform
+    - Data Scientist / Applied Scientist
+industry_priority:
+  - AI-native / Foundation Model / Agent / AI Applications
+  - Cloud / AI Platform / Data Infrastructure / Developer Tools
+  - FinTech / Banking / Insurance / Financial Infrastructure
+  - Formal Consulting / Digital Transformation / Enterprise AI Services
+  - Large Technology / Internet Companies
+employer_policy:
+  cap_exempt_default_excluded: true
+  regular_consulting_allowed: true
+  staffing_agency_excluded: true
+  body_shop_excluded: true
+

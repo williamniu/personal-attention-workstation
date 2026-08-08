@@ -1,0 +1,11 @@
+schedule:
+  scans_per_day: 3
+runtime:
+  desired_state: STOPPED
+network:
+  bind_host: 127.0.0.1
+  private_network_only: true
+automation:
+  outbound_requires_human: true
+  final_submit_requires_human: true
+

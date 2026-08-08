@@ -1,0 +1,63 @@
+candidate_id: girlfriend
+display_name: Girlfriend
+graduation: "2026-12"
+stem_opt_eligible: true
+cpt_before_graduation: true
+first_available_h1b_lottery_required: true
+profile_version: 1
+education:
+  institution: Carnegie Mellon University
+  program: null
+experience:
+  - company: DeepWisdom, Shenzhen
+    title: AI Product Manager
+    description: null
+    quantitative_results: []
+location_priority:
+  - New York
+  - Chicago
+  - San Francisco Bay Area
+  - Seattle
+  - Boston
+  - Austin
+  - Other US
+role_tiers:
+  tier_1:
+    - AI Product Manager
+    - Generative AI Product Manager
+    - Technical Product Manager - AI
+    - Product Manager - Data / Platform / SaaS
+    - Product Operations
+    - Product Analyst
+    - Technical Program Manager
+  tier_2:
+    - Business Analyst
+    - Data Analyst
+    - Operations Analyst
+    - Strategy & Operations
+    - Implementation Consultant
+    - Solutions Consultant
+    - Customer Success Manager
+    - Technical Account Manager
+  tier_3:
+    - Corporate Operations
+    - Marketing Operations
+    - Commercial Operations
+    - Client Operations
+industry_priority: []
+employer_policy:
+  cap_exempt_default_excluded: true
+  regular_consulting_allowed: true
+  staffing_agency_excluded: true
+  body_shop_excluded: true
+communication:
+  spoken_english_intensity: 3
+  customer_facing_ratio: unknown
+  presentation_frequency: unknown
+  sales_persuasion_load: unknown
+  negotiation_load: unknown
+  unstructured_conversation_load: unknown
+  prepared_communication_ratio: unknown
+  current_communication_fit: 0
+  improvement_feasibility: 0
+

@@ -9,4 +9,3 @@ st.title("H-1B Career Intelligence System")
 st.caption("Local-first · evidence-driven · human-controlled")
 st.metric("Desired state", state_store().read()["desired_state"])
 st.info("M0 runtime skeleton is active. Data modules are enabled milestone by milestone.")
-
