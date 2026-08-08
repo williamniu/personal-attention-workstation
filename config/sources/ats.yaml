@@ -1,0 +1,9 @@
+status: BLOCKED_EXTERNAL
+notes: Live board tokens and company site identifiers are not configured.
+providers:
+  greenhouse: []
+  lever: []
+  ashby: []
+  smartrecruiters: []
+  career_pages: []
+

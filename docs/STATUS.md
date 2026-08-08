@@ -8,7 +8,8 @@ Last updated: 2026-08-07
 | M1 Candidate profiles and role taxonomy | COMPLETE | 6 cumulative tests; migration SQL compile |
 | M2 Official visa data warehouse | COMPLETE (live manifests blocked) | 9 cumulative tests; 3 contract fixtures |
 | M3 Company entity resolution | COMPLETE | 13 cumulative tests; deterministic/non-merge cases |
-| M4–M11 | NOT STARTED | — |
+| M4 Realtime job collection | COMPLETE (live boards blocked) | 21 cumulative tests; 4 ATS + career fixture |
+| M5–M11 | NOT STARTED | — |
 
 ## External constraints
 
@@ -17,6 +18,8 @@ Last updated: 2026-08-07
 - No external data source or credential has been claimed as connected.
 - `BLOCKED_EXTERNAL`: current official USCIS and DOL download manifest entries are not configured;
   fixture imports prove the contracts but do not represent a live import.
+- `BLOCKED_EXTERNAL`: no verified company board tokens/site identifiers are configured. Four ATS
+  contracts pass fixtures, but the “three ATS live” acceptance item is not claimed as successful.
 
 ## M0 verification
 
@@ -45,3 +48,10 @@ Last updated: 2026-08-07
 - Same-name companies with different domains remain separate review candidates.
 - Fuzzy names produce `POSSIBLE_MATCH`, never an automatic merge.
 - Human-confirmed aliases can be added and split without rewriting the companies.
+
+## M4 verification
+
+- Greenhouse, Lever, Ashby, SmartRecruiters, and Career Page JSON-LD fixtures normalize.
+- Official apply URLs are retained.
+- Unchanged jobs create zero new versions; changed descriptions create one version.
+- Jobs close only after consecutive missing reconciliations.

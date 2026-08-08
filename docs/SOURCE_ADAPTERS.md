@@ -11,3 +11,6 @@ required column contracts. A successful fixture test is not a live-source succes
 
 No-result queries belong in coverage observations, never negative sponsorship evidence.
 
+Public job adapters support Greenhouse, Lever, Ashby, SmartRecruiters, and structured Career Page
+JSON-LD. Their live identifiers are intentionally empty in `config/sources/ats.yaml`. Job content is
+hashed before version creation; absence requires consecutive reconciliations before soft-closing.
