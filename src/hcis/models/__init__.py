@@ -1,3 +1,9 @@
+from hcis.models.application import (
+    ApplicationRecord,
+    BrowserTaskRecord,
+    CandidateAnswer,
+    ResumeVariant,
+)
 from hcis.models.candidate import (
     Candidate,
     CandidateDocument,
@@ -42,7 +48,9 @@ from hcis.models.source import (
 )
 
 __all__ = [
+    "ApplicationRecord",
     "AuditLog",
+    "BrowserTaskRecord",
     "CalendarCandidateRecord",
     "CRMEvent",
     "Candidate",
@@ -52,6 +60,7 @@ __all__ = [
     "CandidateSkill",
     "CandidateJobScore",
     "CandidateContactRelationship",
+    "CandidateAnswer",
     "Company",
     "CompanyAlias",
     "CompanyMatchReview",
@@ -74,6 +83,7 @@ __all__ = [
     "PermCase",
     "OutreachDraftRecord",
     "RawArtifactRecord",
+    "ResumeVariant",
     "SourceCheckpointRecord",
     "SourceRegistry",
     "SearchQueryFingerprint",

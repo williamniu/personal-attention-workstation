@@ -5,6 +5,8 @@ from typing import Annotated
 import yaml  # type: ignore[import-untyped]
 from fastapi import Body, Depends, FastAPI, HTTPException
 
+from hcis.applications import Application, ApplicationStatus
+from hcis.browser import BrowserTask
 from hcis.crm import Contact
 from hcis.domain.runtime import DesiredState, StateStore
 from hcis.profiles.loader import load_profile
@@ -138,3 +140,36 @@ def create_contact(
         if record.get("canonical_profile_url") == contact.canonical_profile_url:
             return record
     return data_store().append("contacts", contact.model_dump(), "CONTACT_CREATED")
+
+
+@app.post("/applications")
+def create_application(_: Protected, application: Application) -> dict[str, object]:
+    if application.status == ApplicationStatus.SUBMITTED:
+        raise HTTPException(status_code=409, detail="Create before user-recorded submission")
+    for record in data_store().list("applications"):
+        if (
+            record.get("candidate_id") == application.candidate_id
+            and record.get("job_id") == application.job_id
+        ):
+            raise HTTPException(status_code=409, detail="Candidate/job application already exists")
+    return data_store().append("applications", application.model_dump(), "APPLICATION_CREATED")
+
+
+@app.post("/browser-tasks")
+def create_browser_task(_: Protected, task: BrowserTask) -> dict[str, object]:
+    return data_store().append("browser-tasks", task.model_dump(), "BROWSER_TASK_CREATED")
+
+
+@app.post("/browser-tasks/{task_id}/complete")
+def complete_browser_task(
+    task_id: str, _: Protected, payload: Annotated[dict[str, object], Body()]
+) -> dict[str, object]:
+    if payload.get("completed_by") != "user":
+        raise HTTPException(status_code=403, detail="User completion required")
+    if not any(record.get("id") == task_id for record in data_store().list("browser-tasks")):
+        raise HTTPException(status_code=404, detail="Browser task not found")
+    return data_store().append(
+        "browser-task-events",
+        {"task_id": task_id, "status": "COMPLETED", "completed_by": "user"},
+        "BROWSER_TASK_COMPLETED",
+    )

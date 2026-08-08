@@ -1,0 +1,16 @@
+status: BLOCKED_EXTERNAL
+chrome_profile:
+  path: ~/Library/Application Support/HCIS-Chrome
+  configured: false
+  dedicated: true
+  cookies_in_git: false
+allowed:
+  - read public or signed-in pages
+  - prepare safe prefill plans
+forbidden:
+  - send messages
+  - accept meetings
+  - final submit
+  - bypass captcha
+  - bypass mfa
+

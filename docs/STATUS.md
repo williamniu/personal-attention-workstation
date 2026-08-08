@@ -14,7 +14,8 @@ Last updated: 2026-08-07
 | M7 Dashboard and human review | COMPLETE | 36 cumulative tests; token + durable audit |
 | M8 Networking CRM | COMPLETE (external discovery blocked) | 41 cumulative tests; no send surface |
 | M9 Mail and ICS intake | COMPLETE (live mailbox blocked) | 45 cumulative tests; read-only folder contract |
-| M10–M11 | NOT STARTED | — |
+| M10 Browser prefill and applications | COMPLETE (browser login blocked) | 52 cumulative tests; submit gate |
+| M11 | NOT STARTED | — |
 
 ## External constraints
 
@@ -31,6 +32,8 @@ Last updated: 2026-08-07
   and CRM contracts work; no external profile research or outreach has run.
 - `BLOCKED_EXTERNAL`: William's Himalaya/Outlook account is not configured. The read-only folder
   and manual import contracts pass; no live mailbox was accessed. Girlfriend mail remains disabled.
+- `BLOCKED_EXTERNAL`: the dedicated Air Chrome profile is not configured or signed in. Apply-page
+  parsing and safe plans pass fixtures; no browser was launched and no form was submitted.
 
 ## M0 verification
 
@@ -104,3 +107,12 @@ Last updated: 2026-08-07
 - Only whitelisted recruiting mail stores a local body; normal mail body is discarded.
 - Manual `.eml` and `.ics` fixtures parse; calendar output requires human confirmation.
 - Mail may create William-scoped CRM events; providers expose no send method.
+
+## M10 verification
+
+- Apply-page parsing separates safe identity fields from sponsorship, authorization, salary, and
+  other mandatory human fields.
+- CAPTCHA and MFA halt before any prefill.
+- Automation cannot record `SUBMITTED`; only an explicit user actor can.
+- Duplicate candidate/job applications fail while the other candidate remains independent.
+- Browser-task completion requires a user actor; no submit method exists.
