@@ -1,0 +1,13 @@
+alembic<2,>=1.13
+beautifulsoup4<5,>=4.12
+duckdb<2,>=1.1
+fastapi<1,>=0.115
+httpx<1,>=0.27
+polars<2,>=1.8
+psycopg[binary]<4,>=3.2
+pydantic<3,>=2.9
+pydantic-settings<3,>=2.5
+pyyaml<7,>=6
+sqlalchemy<3,>=2.0
+streamlit<2,>=1.38
+uvicorn<1,>=0.30

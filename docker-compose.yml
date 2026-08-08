@@ -1,0 +1,41 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: hcis
+      POSTGRES_USER: hcis
+      POSTGRES_PASSWORD: hcis
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hcis"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    restart: unless-stopped
+
+  api:
+    build: .
+    command: uvicorn hcis.api.app:app --host 0.0.0.0 --port 8080
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+
+  dashboard:
+    build: .
+    command: streamlit run src/hcis/dashboard/app.py --server.address=0.0.0.0
+    env_file: .env
+    depends_on:
+      - api
+    ports:
+      - "127.0.0.1:8501:8501"
+    restart: unless-stopped
+

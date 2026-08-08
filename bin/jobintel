@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+PROJECT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+export HCIS_HOME="$PROJECT_DIR"
+exec "$PROJECT_DIR/.venv/bin/python" -m hcis.cli "$@"
+
