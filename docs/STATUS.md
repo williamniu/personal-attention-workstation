@@ -9,7 +9,8 @@ Last updated: 2026-08-07
 | M2 Official visa data warehouse | COMPLETE (live manifests blocked) | 9 cumulative tests; 3 contract fixtures |
 | M3 Company entity resolution | COMPLETE | 13 cumulative tests; deterministic/non-merge cases |
 | M4 Realtime job collection | COMPLETE (live boards blocked) | 21 cumulative tests; 4 ATS + career fixture |
-| M5–M11 | NOT STARTED | — |
+| M5 Sponsorship evidence engine | COMPLETE (live LLM blocked) | 28 cumulative tests; safety semantics |
+| M6–M11 | NOT STARTED | — |
 
 ## External constraints
 
@@ -20,6 +21,8 @@ Last updated: 2026-08-07
   fixture imports prove the contracts but do not represent a live import.
 - `BLOCKED_EXTERNAL`: no verified company board tokens/site identifiers are configured. Four ATS
   contracts pass fixtures, but the “three ATS live” acceptance item is not claimed as successful.
+- `BLOCKED_EXTERNAL`: no external LLM provider is configured. JSON schema and cache contracts pass
+  a fixture provider; production extraction remains disabled until explicitly configured.
 
 ## M0 verification
 
@@ -55,3 +58,11 @@ Last updated: 2026-08-07
 - Official apply URLs are retained.
 - Unchanged jobs create zero new versions; changed descriptions create one version.
 - Jobs close only after consecutive missing reconciliations.
+
+## M5 verification
+
+- “Do not sponsor” maps to explicit negative; Transfer-only remains separate.
+- No USCIS/LCA result remains coverage + `UNKNOWN_NEEDS_VERIFICATION`.
+- Initial USCIS + LCA is `LIKELY`, never confirmed first-available.
+- Rule/LLM conflicts require review; repeated structured inputs hit cache.
+- Current human review remains authoritative; new conflicts set re-review without overwrite.

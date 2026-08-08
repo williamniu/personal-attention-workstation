@@ -12,6 +12,15 @@ from hcis.models.company import (
     CompanyRelationship,
     CompanySourceIdentifier,
 )
+from hcis.models.evidence import (
+    CoverageObservationRecord,
+    EVerifyEvidence,
+    HumanReviewRecord,
+    HumanReviewTask,
+    LLMCacheRecord,
+    SponsorshipAssessmentRecord,
+    SponsorshipEvidence,
+)
 from hcis.models.job import Job, JobRoleLabel, JobSource, JobVersion, SearchQueryFingerprint
 from hcis.models.source import (
     LcaCase,
@@ -33,15 +42,22 @@ __all__ = [
     "CompanyMatchReview",
     "CompanyRelationship",
     "CompanySourceIdentifier",
+    "CoverageObservationRecord",
+    "EVerifyEvidence",
+    "HumanReviewRecord",
+    "HumanReviewTask",
     "Job",
     "JobRoleLabel",
     "JobSource",
     "JobVersion",
+    "LLMCacheRecord",
     "LcaCase",
     "PermCase",
     "RawArtifactRecord",
     "SourceCheckpointRecord",
     "SourceRegistry",
     "SearchQueryFingerprint",
+    "SponsorshipAssessmentRecord",
+    "SponsorshipEvidence",
     "UscisEmployerMetric",
 ]

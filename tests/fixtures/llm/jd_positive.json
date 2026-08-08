@@ -1,0 +1,14 @@
+{
+  "current_work_authorization_required": "unknown",
+  "future_sponsorship": "yes",
+  "first_time_h1b": "unknown",
+  "first_available_lottery": "unknown",
+  "h1b_transfer": "unknown",
+  "opt_supported": "unknown",
+  "stem_opt_supported": "unknown",
+  "everify_mentioned": "unknown",
+  "citizenship_required": "unknown",
+  "security_clearance_required": "unknown",
+  "evidence_quotes": ["visa sponsorship is available"],
+  "confidence": 0.8
+}
