@@ -90,6 +90,7 @@ def collection(
         "contacts",
         "applications",
         "browser-tasks",
+        "mail-intake",
         "reports",
     }
     if collection not in allowed:

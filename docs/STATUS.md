@@ -13,7 +13,8 @@ Last updated: 2026-08-07
 | M6 Candidate scoring and reports | COMPLETE | 34 cumulative tests; isolated reports/exports |
 | M7 Dashboard and human review | COMPLETE | 36 cumulative tests; token + durable audit |
 | M8 Networking CRM | COMPLETE (external discovery blocked) | 41 cumulative tests; no send surface |
-| M9–M11 | NOT STARTED | — |
+| M9 Mail and ICS intake | COMPLETE (live mailbox blocked) | 45 cumulative tests; read-only folder contract |
+| M10–M11 | NOT STARTED | — |
 
 ## External constraints
 
@@ -28,6 +29,8 @@ Last updated: 2026-08-07
   a fixture provider; production extraction remains disabled until explicitly configured.
 - `BLOCKED_EXTERNAL`: authenticated contact discovery sources are not configured. Manual discovery
   and CRM contracts work; no external profile research or outreach has run.
+- `BLOCKED_EXTERNAL`: William's Himalaya/Outlook account is not configured. The read-only folder
+  and manual import contracts pass; no live mailbox was accessed. Girlfriend mail remains disabled.
 
 ## M0 verification
 
@@ -93,3 +96,11 @@ Last updated: 2026-08-07
 - CRM events are idempotent and manual discovery is company-scoped.
 - Sponsorship drafts contain first-eligible-lottery and transfer distinctions, require human
   approval, and the service exposes no send method.
+
+## M9 verification
+
+- Requests outside `JobIntel-Intake` fail before any mail command runs.
+- UIDVALIDITY/UID keys deduplicate repeat syncs.
+- Only whitelisted recruiting mail stores a local body; normal mail body is discarded.
+- Manual `.eml` and `.ics` fixtures parse; calendar output requires human confirmation.
+- Mail may create William-scoped CRM events; providers expose no send method.

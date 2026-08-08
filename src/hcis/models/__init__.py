@@ -29,6 +29,7 @@ from hcis.models.evidence import (
     SponsorshipEvidence,
 )
 from hcis.models.job import Job, JobRoleLabel, JobSource, JobVersion, SearchQueryFingerprint
+from hcis.models.mail import CalendarCandidateRecord, MailMessageRecord
 from hcis.models.runtime import AuditLog, SystemStateRecord
 from hcis.models.scoring import CandidateJobScore, CoupleJobCombination
 from hcis.models.source import (
@@ -42,6 +43,7 @@ from hcis.models.source import (
 
 __all__ = [
     "AuditLog",
+    "CalendarCandidateRecord",
     "CRMEvent",
     "Candidate",
     "CandidateDocument",
@@ -67,6 +69,7 @@ __all__ = [
     "JobSource",
     "JobVersion",
     "LLMCacheRecord",
+    "MailMessageRecord",
     "LcaCase",
     "PermCase",
     "OutreachDraftRecord",

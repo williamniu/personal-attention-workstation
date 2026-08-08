@@ -1,0 +1,4 @@
+[
+  {"id":1,"message_id":"<recruiter-1@example.com>","subject":"Interview invitation and H-1B question","from":"Recruiter <recruiter@example.com>","date":"2026-08-07T14:00:00Z"},
+  {"id":2,"message_id":"<newsletter-1@example.com>","subject":"Office lunch menu","from":"News <news@example.com>","date":"2026-08-07T15:00:00Z"}
+]

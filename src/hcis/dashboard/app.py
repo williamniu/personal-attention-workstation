@@ -88,6 +88,7 @@ else:
         "Contacts / CRM": "contacts",
         "Applications": "applications",
         "Browser Tasks": "browser-tasks",
+        "Mail Intake": "mail-intake",
         "Reports": "reports",
     }.get(page)
     if collection:

@@ -1,0 +1,17 @@
+status: BLOCKED_EXTERNAL
+providers:
+  william:
+    type: himalaya
+    configured: false
+    include_folders:
+      - JobIntel-Intake
+    exclude_all_other_folders: true
+    read: true
+    send: false
+    delete: false
+    move: false
+    mark_read: false
+    llm_policy: local-only
+  girlfriend:
+    enabled: false
+    configured: false
