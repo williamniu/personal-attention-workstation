@@ -7,7 +7,8 @@ Last updated: 2026-08-07
 | M0 Repository and runtime skeleton | COMPLETE (Docker runtime blocked) | 3 tests; Ruff; Mypy; lifecycle smoke |
 | M1 Candidate profiles and role taxonomy | COMPLETE | 6 cumulative tests; migration SQL compile |
 | M2 Official visa data warehouse | COMPLETE (live manifests blocked) | 9 cumulative tests; 3 contract fixtures |
-| M3–M11 | NOT STARTED | — |
+| M3 Company entity resolution | COMPLETE | 13 cumulative tests; deterministic/non-merge cases |
+| M4–M11 | NOT STARTED | — |
 
 ## External constraints
 
@@ -37,3 +38,10 @@ Last updated: 2026-08-07
 - A second run discovers and inserts zero records due to persisted checkpoints.
 - DuckDB reads Parquet and aggregates USCIS initial/continuing metrics.
 - Source, checkpoint, raw artifact, case, and metrics migration compiles offline.
+
+## M3 verification
+
+- Exact domain and ATS identifiers auto-match.
+- Same-name companies with different domains remain separate review candidates.
+- Fuzzy names produce `POSSIBLE_MATCH`, never an automatic merge.
+- Human-confirmed aliases can be added and split without rewriting the companies.
