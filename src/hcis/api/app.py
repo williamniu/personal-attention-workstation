@@ -5,6 +5,7 @@ from typing import Annotated
 import yaml  # type: ignore[import-untyped]
 from fastapi import Body, Depends, FastAPI, HTTPException
 
+from hcis.crm import Contact
 from hcis.domain.runtime import DesiredState, StateStore
 from hcis.profiles.loader import load_profile
 from hcis.repositories import LocalDataStore
@@ -124,3 +125,15 @@ def create_review(
     if missing := sorted(required - payload.keys()):
         raise HTTPException(status_code=422, detail=f"Missing fields: {missing}")
     return data_store().append("reviews", {**payload, "is_current": True}, "HUMAN_REVIEW_CREATED")
+
+
+@app.post("/contacts")
+def create_contact(
+    _: Protected,
+    contact: Contact,
+) -> dict[str, object]:
+    existing = data_store().list("contacts")
+    for record in existing:
+        if record.get("canonical_profile_url") == contact.canonical_profile_url:
+            return record
+    return data_store().append("contacts", contact.model_dump(), "CONTACT_CREATED")

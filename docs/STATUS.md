@@ -12,7 +12,8 @@ Last updated: 2026-08-07
 | M5 Sponsorship evidence engine | COMPLETE (live LLM blocked) | 28 cumulative tests; safety semantics |
 | M6 Candidate scoring and reports | COMPLETE | 34 cumulative tests; isolated reports/exports |
 | M7 Dashboard and human review | COMPLETE | 36 cumulative tests; token + durable audit |
-| M8–M11 | NOT STARTED | — |
+| M8 Networking CRM | COMPLETE (external discovery blocked) | 41 cumulative tests; no send surface |
+| M9–M11 | NOT STARTED | — |
 
 ## External constraints
 
@@ -25,6 +26,8 @@ Last updated: 2026-08-07
   contracts pass fixtures, but the “three ATS live” acceptance item is not claimed as successful.
 - `BLOCKED_EXTERNAL`: no external LLM provider is configured. JSON schema and cache contracts pass
   a fixture provider; production extraction remains disabled until explicitly configured.
+- `BLOCKED_EXTERNAL`: authenticated contact discovery sources are not configured. Manual discovery
+  and CRM contracts work; no external profile research or outreach has run.
 
 ## M0 verification
 
@@ -82,3 +85,11 @@ Last updated: 2026-08-07
 - Protected API endpoints reject missing tokens.
 - Human reviews persist locally when PostgreSQL is unavailable and emit append-only audit entries.
 - Source health displays blockers rather than empty-success states.
+
+## M8 verification
+
+- Canonical profile URLs deduplicate contacts.
+- Candidate/contact relationships remain candidate-scoped.
+- CRM events are idempotent and manual discovery is company-scoped.
+- Sponsorship drafts contain first-eligible-lottery and transfer distinctions, require human
+  approval, and the service exposes no send method.

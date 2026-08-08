@@ -12,6 +12,13 @@ from hcis.models.company import (
     CompanyRelationship,
     CompanySourceIdentifier,
 )
+from hcis.models.crm import (
+    CandidateContactRelationship,
+    ContactJobLink,
+    ContactRecord,
+    CRMEvent,
+    OutreachDraftRecord,
+)
 from hcis.models.evidence import (
     CoverageObservationRecord,
     EVerifyEvidence,
@@ -35,17 +42,21 @@ from hcis.models.source import (
 
 __all__ = [
     "AuditLog",
+    "CRMEvent",
     "Candidate",
     "CandidateDocument",
     "CandidateExperience",
     "CandidatePreference",
     "CandidateSkill",
     "CandidateJobScore",
+    "CandidateContactRelationship",
     "Company",
     "CompanyAlias",
     "CompanyMatchReview",
     "CompanyRelationship",
     "CompanySourceIdentifier",
+    "ContactJobLink",
+    "ContactRecord",
     "CoverageObservationRecord",
     "CoupleJobCombination",
     "EVerifyEvidence",
@@ -58,6 +69,7 @@ __all__ = [
     "LLMCacheRecord",
     "LcaCase",
     "PermCase",
+    "OutreachDraftRecord",
     "RawArtifactRecord",
     "SourceCheckpointRecord",
     "SourceRegistry",
