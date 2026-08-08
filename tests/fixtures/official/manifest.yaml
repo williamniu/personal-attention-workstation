@@ -1,0 +1,16 @@
+entries:
+  - source_id: uscis_employer_data
+    external_id: uscis-fy2025
+    partition: FY2025
+    uri: uscis_fy2025.csv
+    media_type: text/csv
+  - source_id: dol_lca
+    external_id: dol-lca-fy2026-q2
+    partition: FY2026_Q2
+    uri: lca_fy2026_q2.csv
+    media_type: text/csv
+  - source_id: dol_perm
+    external_id: dol-perm-fy2026-q2
+    partition: FY2026_Q2
+    uri: perm_fy2026_q2.csv
+    media_type: text/csv

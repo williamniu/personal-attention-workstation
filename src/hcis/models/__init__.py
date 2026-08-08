@@ -5,6 +5,14 @@ from hcis.models.candidate import (
     CandidatePreference,
     CandidateSkill,
 )
+from hcis.models.source import (
+    LcaCase,
+    PermCase,
+    RawArtifactRecord,
+    SourceCheckpointRecord,
+    SourceRegistry,
+    UscisEmployerMetric,
+)
 
 __all__ = [
     "Candidate",
@@ -12,4 +20,10 @@ __all__ = [
     "CandidateExperience",
     "CandidatePreference",
     "CandidateSkill",
+    "LcaCase",
+    "PermCase",
+    "RawArtifactRecord",
+    "SourceCheckpointRecord",
+    "SourceRegistry",
+    "UscisEmployerMetric",
 ]

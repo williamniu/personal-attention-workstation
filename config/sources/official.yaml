@@ -1,0 +1,6 @@
+status: BLOCKED_EXTERNAL
+notes: >-
+  Populate entries only from current official USCIS and DOL manifests. Absence of an entry or
+  returned employer row is coverage information, never negative sponsorship evidence.
+entries: []
+
