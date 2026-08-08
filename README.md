@@ -17,3 +17,6 @@ application without a human action.
 
 See `docs/STATUS.md` and `docs/OPERATIONS.md` for current capabilities and commands.
 
+Current source configs start blocked/unconfigured. `run-once` therefore completes honestly with
+`SUCCESS_NO_ENABLED_SOURCES` until verified official manifests, ATS identifiers, or local providers
+are enabled. Fixture reports under `examples/reports/` are labeled examples, not live jobs.

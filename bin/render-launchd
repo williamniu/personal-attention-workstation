@@ -1,0 +1,4 @@
+#!/bin/sh
+set -eu
+PROJECT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+sed "s|__PROJECT_DIR__|$PROJECT_DIR|g" "$PROJECT_DIR/ops/launchd/com.hcis.supervisor.plist.template"

@@ -1,0 +1,9 @@
+status: BLOCKED_EXTERNAL
+email:
+  configured: false
+  mode: outbox-only
+  send_requires_explicit_provider_configuration: true
+daily_reports:
+  william: true
+  girlfriend: true
+  couple: false

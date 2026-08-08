@@ -7,3 +7,5 @@
   stored, attachments are not downloaded, and work-confidential text is local-model-only.
 - No automation may send outreach, accept legal attestations, bypass MFA/CAPTCHA, or submit an application.
 - No missing public visa result is negative sponsorship evidence.
+- Backups exclude `private/`, browser profiles, and secrets; PostgreSQL dump status must be explicit.
+- Reset is recoverable and ordinary UI cannot delete the append-only audit log.

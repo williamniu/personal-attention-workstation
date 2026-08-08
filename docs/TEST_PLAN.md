@@ -1,13 +1,27 @@
-# Test Plan
+# Test Plan and Evidence
 
-Each milestone adds the narrowest regression tests for its contracts. The final suite covers:
+Run the complete local gate:
 
-- no-record sponsorship semantics;
-- entity-resolution non-merges;
-- incremental idempotency and checkpoint recovery;
-- human-review precedence;
-- two-candidate data isolation;
-- browser, mail, notification, and application safety gates;
-- lifecycle persistence and backup/restore.
+```bash
+make check
+uv run alembic upgrade head --sql > /tmp/hcis-migrations.sql
+```
 
-Run all checks with `make check`.
+Verified on Python 3.12.13:
+
+- 60 tests pass across unit, contract, integration, and E2E suites;
+- Ruff passes;
+- strict Mypy passes;
+- all 11 PostgreSQL migrations compile in offline mode;
+- local API/Dashboard/Scheduler lifecycle smoke passes and finishes fully stopped;
+- launchd output passes `plutil -lint`;
+- a local backup archive is created and the tested restore requires confirmation.
+
+Coverage includes no-record semantics, exact/fuzzy company resolution, three official-data
+contracts, four ATS contracts, job/evidence/LLM/notification idempotency, checkpoint recovery, human
+review precedence, candidate isolation, mail-folder privacy, browser/application gates,
+desired-state recovery, backup/restore, logging redaction, and repeat-cycle zero side effects.
+
+Not yet executable on this host: Docker/PostgreSQL integration, live official downloads, live ATS
+boards, live mailbox, signed-in browser, external LLM, LaunchAgent installation, and email delivery.
+Each remains an explicit acceptance gate in `docs/STATUS.md`.

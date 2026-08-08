@@ -1,5 +1,12 @@
 schedule:
   scans_per_day: 3
+  full_reconciliation: weekly
+  entity_audit: monthly
+resources:
+  max_concurrent_sources: 2
+  max_concurrent_browser_tasks: 1
+  max_llm_calls_per_cycle: 50
+  min_free_disk_gb: 10
 runtime:
   desired_state: STOPPED
 network:
@@ -8,4 +15,3 @@ network:
 automation:
   outbound_requires_human: true
   final_submit_requires_human: true
-

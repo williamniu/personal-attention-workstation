@@ -36,6 +36,7 @@ from hcis.models.evidence import (
 )
 from hcis.models.job import Job, JobRoleLabel, JobSource, JobVersion, SearchQueryFingerprint
 from hcis.models.mail import CalendarCandidateRecord, MailMessageRecord
+from hcis.models.operations import JobRunRecord, NotificationOutboxRecord
 from hcis.models.runtime import AuditLog, SystemStateRecord
 from hcis.models.scoring import CandidateJobScore, CoupleJobCombination
 from hcis.models.source import (
@@ -75,10 +76,12 @@ __all__ = [
     "HumanReviewTask",
     "Job",
     "JobRoleLabel",
+    "JobRunRecord",
     "JobSource",
     "JobVersion",
     "LLMCacheRecord",
     "MailMessageRecord",
+    "NotificationOutboxRecord",
     "LcaCase",
     "PermCase",
     "OutreachDraftRecord",

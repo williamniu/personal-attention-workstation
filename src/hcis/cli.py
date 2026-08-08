@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -12,7 +13,9 @@ import urllib.request
 from pathlib import Path
 
 from hcis.domain.runtime import DesiredState, StateStore
+from hcis.operations import BackupManager, plan_recovery
 from hcis.settings import Settings
+from hcis.workflows import run_once
 
 
 def _settings() -> Settings:
@@ -20,6 +23,8 @@ def _settings() -> Settings:
 
 
 class Services:
+    names = ("api", "dashboard", "scheduler")
+
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.runtime = settings.data_dir / "runtime"
@@ -55,7 +60,8 @@ class Services:
             )
         self._pid_file(name).write_text(str(process.pid))
 
-    def start(self) -> None:
+    def start(self, desired_state: DesiredState = DesiredState.SCHEDULED) -> None:
+        self.store.set(desired_state)
         self._spawn(
             "api",
             [
@@ -85,10 +91,11 @@ class Services:
                 "true",
             ],
         )
-        self.store.set(DesiredState.SCHEDULED)
+        if desired_state == DesiredState.SCHEDULED:
+            self._spawn("scheduler", [sys.executable, "-m", "hcis.workflows.scheduler"])
 
     def stop(self) -> None:
-        for name in ("api", "dashboard"):
+        for name in self.names:
             path = self._pid_file(name)
             if not self._is_running(name):
                 continue
@@ -104,18 +111,64 @@ class Services:
     def status(self) -> dict[str, object]:
         return {
             **self.store.read(),
-            "services": {name: self._is_running(name) for name in ("api", "dashboard")},
+            "services": {name: self._is_running(name) for name in self.names},
         }
+
+    def any_running(self) -> bool:
+        return any(self._is_running(name) for name in self.names)
+
+    def supervise(self) -> dict[str, object]:
+        state = DesiredState(self.store.read()["desired_state"])
+        plan = plan_recovery(state)
+        if state == DesiredState.SCHEDULED:
+            self.start(DesiredState.SCHEDULED)
+        elif state == DesiredState.PAUSED:
+            self.start(DesiredState.PAUSED)
+        return {"desired_state": state, **plan.__dict__}
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="jobintel")
+    commands = parser.add_subparsers(dest="command", required=True)
+    for command in (
+        "start",
+        "stop",
+        "pause",
+        "resume",
+        "run-once",
+        "status",
+        "health",
+        "doctor",
+        "backup",
+        "supervise",
+    ):
+        commands.add_parser(command)
+    logs = commands.add_parser("logs")
+    logs.add_argument("--service", choices=["api", "dashboard", "scheduler", "all"], default="all")
+    restore = commands.add_parser("restore")
+    restore.add_argument("archive", type=Path)
+    restore.add_argument("--confirm-restore", action="store_true")
+    reset = commands.add_parser("reset")
+    reset.add_argument("--confirm-delete-all-data", action="store_true")
+    return parser
+
+
+def _show_logs(services: Services, service: str) -> None:
+    names = services.names if service == "all" else (service,)
+    for name in names:
+        path = services.logs / f"{name}.log"
+        print(f"== {name} ==")
+        if path.exists():
+            print("\n".join(path.read_text(errors="replace").splitlines()[-100:]))
+        else:
+            print("No log file")
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="jobintel")
-    parser.add_argument(
-        "command", choices=["start", "stop", "pause", "resume", "status", "health", "doctor"]
-    )
-    args = parser.parse_args(argv)
+    args = _parser().parse_args(argv)
     settings = _settings()
     services = Services(settings)
+    backup = BackupManager()
 
     if args.command == "start":
         services.start()
@@ -124,7 +177,9 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "pause":
         services.store.set(DesiredState.PAUSED)
     elif args.command == "resume":
-        services.store.set(DesiredState.SCHEDULED)
+        services.start(DesiredState.SCHEDULED)
+    elif args.command == "run-once":
+        print(json.dumps(run_once(settings), indent=2))
     elif args.command == "status":
         print(json.dumps(services.status(), indent=2))
     elif args.command == "health":
@@ -137,7 +192,35 @@ def main(argv: list[str] | None = None) -> int:
             print(f"unhealthy: {error}", file=sys.stderr)
             return 1
     elif args.command == "doctor":
-        print(json.dumps({"python": sys.version, "home": str(settings.home)}, indent=2))
+        print(
+            json.dumps(
+                {
+                    "python": sys.version,
+                    "home": str(settings.home),
+                    "docker": shutil.which("docker"),
+                    "pg_dump": shutil.which("pg_dump"),
+                    "himalaya": shutil.which("himalaya"),
+                    "desired_state": services.store.read()["desired_state"],
+                },
+                indent=2,
+            )
+        )
+    elif args.command == "logs":
+        _show_logs(services, args.service)
+    elif args.command == "backup":
+        print(backup.create(settings.home, settings.data_dir / "backups"))
+    elif args.command == "restore":
+        if services.any_running():
+            print("Stop services before restore", file=sys.stderr)
+            return 2
+        backup.restore(settings.home, args.archive, confirmed=args.confirm_restore)
+    elif args.command == "reset":
+        if services.any_running():
+            print("Stop services before reset", file=sys.stderr)
+            return 2
+        print(backup.recoverable_reset(settings.home, args.confirm_delete_all_data))
+    elif args.command == "supervise":
+        print(json.dumps(services.supervise(), indent=2, default=str))
     return 0
 
 

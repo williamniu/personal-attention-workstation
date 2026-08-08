@@ -28,6 +28,8 @@ services:
     volumes:
       - ./data:/app/data
     restart: unless-stopped
+    mem_limit: 1g
+    cpus: 1.0
 
   dashboard:
     build: .
@@ -38,4 +40,19 @@ services:
     ports:
       - "127.0.0.1:8501:8501"
     restart: unless-stopped
+    mem_limit: 1g
+    cpus: 1.0
 
+  scheduler:
+    build: .
+    command: python -m hcis.workflows.scheduler
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config:ro
+    restart: unless-stopped
+    mem_limit: 1g
+    cpus: 1.0

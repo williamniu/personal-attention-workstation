@@ -15,7 +15,7 @@ Last updated: 2026-08-07
 | M8 Networking CRM | COMPLETE (external discovery blocked) | 41 cumulative tests; no send surface |
 | M9 Mail and ICS intake | COMPLETE (live mailbox blocked) | 45 cumulative tests; read-only folder contract |
 | M10 Browser prefill and applications | COMPLETE (browser login blocked) | 52 cumulative tests; submit gate |
-| M11 | NOT STARTED | — |
+| M11 Operations and full acceptance | COMPLETE (runtime integrations blocked) | 60 tests; lifecycle/backup/launchd smoke |
 
 ## External constraints
 
@@ -34,6 +34,17 @@ Last updated: 2026-08-07
   and manual import contracts pass; no live mailbox was accessed. Girlfriend mail remains disabled.
 - `BLOCKED_EXTERNAL`: the dedicated Air Chrome profile is not configured or signed in. Apply-page
   parsing and safe plans pass fixtures; no browser was launched and no form was submitted.
+- `BLOCKED_EXTERNAL`: notification email delivery is not configured. Outbox/template/retry contracts
+  pass; no email was sent.
+- `BLOCKED_EXTERNAL`: the launchd template validates but was not installed into the user LaunchAgents
+  directory from this sandbox.
+
+## Known implementation limits
+
+- Docker is absent, so PostgreSQL and container recovery remain configuration-verified only.
+- The local three-times-daily scheduler is implemented with the Python standard library. Prefect UI
+  and worker services are not activated; add them only if operational visibility justifies the cost.
+- Fixture reports are examples, not current jobs or live sponsorship facts.
 
 ## M0 verification
 
@@ -116,3 +127,15 @@ Last updated: 2026-08-07
 - Automation cannot record `SUBMITTED`; only an explicit user actor can.
 - Duplicate candidate/job applications fail while the other candidate remains independent.
 - Browser-task completion requires a user actor; no submit method exists.
+
+## M11 verification
+
+- `start`, `health`, `pause`, `resume`, and `stop` passed with API, Dashboard, and Scheduler; final
+  desired state and all service processes are `STOPPED`.
+- `run-once` returned `SUCCESS_NO_ENABLED_SOURCES` with zero inserts/calls instead of claiming live
+  ingestion.
+- Consecutive identical E2E cycles produce zero new jobs, versions, Evidence, LLM calls, or notices.
+- Backup creation and confirmed restore pass; reset moves data to a recoverable trash directory.
+- launchd template passes `plutil -lint`; desired-state recovery plans cover scheduled/paused/stopped.
+- Notification retry failure remains visible and a successful retry is not sent twice.
+- 60 tests, Ruff, Mypy, and the full PostgreSQL offline migration chain pass.

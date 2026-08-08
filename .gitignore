@@ -9,10 +9,10 @@ __pycache__/
 
 data/*
 !data/.gitkeep
+data.trash-*/
 private/*
 !private/.gitkeep
 reports/*
 !reports/.gitkeep
 exports/*
 !exports/.gitkeep
-
