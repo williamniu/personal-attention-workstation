@@ -7,8 +7,11 @@ from sqlalchemy import engine_from_config, pool
 
 from hcis import models  # noqa: F401
 from hcis.db.base import Base
+from hcis.settings import get_settings
 
 config = context.config
+settings = get_settings()
+config.set_main_option("sqlalchemy.url", f"sqlite:///{settings.database_path}")
 if config.config_file_name:
     fileConfig(config.config_file_name)
 target_metadata = Base.metadata

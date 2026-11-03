@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import csv
 import io
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import cast
 
 import httpx
 import yaml  # type: ignore[import-untyped]
+from openpyxl import load_workbook  # type: ignore[import-untyped]
 
 from hcis.sources.contracts import (
     DiscoveredItem,
@@ -17,47 +19,47 @@ from hcis.sources.contracts import (
     SourceHealth,
 )
 
-FIELD_MAPS: dict[str, dict[str, str]] = {
+FIELD_MAPS: dict[str, dict[str, tuple[str, ...]]] = {
     "uscis": {
-        "Fiscal Year": "fiscal_year",
-        "Employer (Petitioner) Name": "legal_employer_name",
-        "Tax ID": "tax_id_last4",
-        "Industry (NAICS) Code": "naics",
-        "Initial Approval": "initial_approval",
-        "Initial Denial": "initial_denial",
-        "Continuing Approval": "continuing_approval",
-        "Continuing Denial": "continuing_denial",
-        "City": "city",
-        "State": "state",
-        "ZIP": "postal_code",
+        "fiscal_year": ("Fiscal Year",),
+        "legal_employer_name": ("Employer (Petitioner) Name", "Employer"),
+        "tax_id_last4": ("Tax ID",),
+        "naics": ("Industry (NAICS) Code", "NAICS"),
+        "initial_approval": ("Initial Approval",),
+        "initial_denial": ("Initial Denial",),
+        "continuing_approval": ("Continuing Approval",),
+        "continuing_denial": ("Continuing Denial",),
+        "city": ("City",),
+        "state": ("State",),
+        "postal_code": ("ZIP",),
     },
     "lca": {
-        "CASE_NUMBER": "case_number",
-        "CASE_STATUS": "case_status",
-        "RECEIVED_DATE": "received_date",
-        "DECISION_DATE": "decision_date",
-        "VISA_CLASS": "visa_class",
-        "EMPLOYER_NAME": "employer_name",
-        "EMPLOYER_CITY": "employer_city",
-        "EMPLOYER_STATE": "employer_state",
-        "JOB_TITLE": "job_title",
-        "SOC_CODE": "soc_code",
-        "FULL_TIME_POSITION": "full_time_position",
-        "WAGE_RATE_OF_PAY_FROM": "wage_rate",
-        "WAGE_UNIT_OF_PAY": "wage_unit",
-        "PREVAILING_WAGE": "prevailing_wage",
-        "WORKSITE_CITY": "worksite_city",
-        "WORKSITE_STATE": "worksite_state",
+        "case_number": ("CASE_NUMBER",),
+        "case_status": ("CASE_STATUS",),
+        "received_date": ("RECEIVED_DATE",),
+        "decision_date": ("DECISION_DATE",),
+        "visa_class": ("VISA_CLASS",),
+        "employer_name": ("EMPLOYER_NAME",),
+        "employer_city": ("EMPLOYER_CITY",),
+        "employer_state": ("EMPLOYER_STATE",),
+        "job_title": ("JOB_TITLE",),
+        "soc_code": ("SOC_CODE",),
+        "full_time_position": ("FULL_TIME_POSITION",),
+        "wage_rate": ("WAGE_RATE_OF_PAY_FROM",),
+        "wage_unit": ("WAGE_UNIT_OF_PAY",),
+        "prevailing_wage": ("PREVAILING_WAGE",),
+        "worksite_city": ("WORKSITE_CITY",),
+        "worksite_state": ("WORKSITE_STATE",),
     },
     "perm": {
-        "CASE_NUMBER": "case_number",
-        "CASE_STATUS": "case_status",
-        "DECISION_DATE": "decision_date",
-        "EMPLOYER_NAME": "employer_name",
-        "EMPLOYER_CITY": "employer_city",
-        "EMPLOYER_STATE": "employer_state",
-        "JOB_TITLE": "job_title",
-        "SOC_CODE": "soc_code",
+        "case_number": ("CASE_NUMBER",),
+        "case_status": ("CASE_STATUS",),
+        "decision_date": ("DECISION_DATE",),
+        "employer_name": ("EMPLOYER_NAME", "EMP_BUSINESS_NAME"),
+        "employer_city": ("EMPLOYER_CITY", "EMP_CITY"),
+        "employer_state": ("EMPLOYER_STATE", "EMP_STATE"),
+        "job_title": ("JOB_TITLE",),
+        "soc_code": ("SOC_CODE", "PWD_SOC_CODE"),
     },
 }
 
@@ -90,7 +92,7 @@ class OfficialDisclosureAdapter:
 
     async def fetch(self, item: DiscoveredItem) -> RawArtifact:
         if item.uri.startswith(("https://", "http://")):
-            async with httpx.AsyncClient(follow_redirects=True, timeout=120) as client:
+            async with httpx.AsyncClient(follow_redirects=True, timeout=600) as client:
                 response = await client.get(item.uri)
                 response.raise_for_status()
                 content = response.content
@@ -104,18 +106,45 @@ class OfficialDisclosureAdapter:
         return RawArtifact(item=item, content=content, content_type=content_type)
 
     async def normalize(self, artifact: RawArtifact) -> list[NormalizedRecord]:
-        reader = csv.DictReader(io.StringIO(artifact.content.decode("utf-8-sig")))
+        values: Iterable[Mapping[str, object]]
+        if artifact.item.uri.lower().endswith(".xlsx"):
+            workbook = load_workbook(io.BytesIO(artifact.content), read_only=True, data_only=True)
+            try:
+                sheet = workbook.active
+                rows = sheet.iter_rows(values_only=True)
+                headers = [str(value).strip() if value is not None else "" for value in next(rows)]
+                values = [
+                    {header: value for header, value in zip(headers, row, strict=False)}
+                    for row in rows
+                ]
+            finally:
+                workbook.close()
+        else:
+            reader = csv.DictReader(io.StringIO(artifact.content.decode("utf-8-sig")))
+            headers = [str(value).strip() for value in (reader.fieldnames or [])]
+            values = reader
+
         field_map = FIELD_MAPS[self.dataset_type]
-        missing = sorted(set(field_map) - set(reader.fieldnames or []))
+        selected = {
+            normalized: next((name for name in aliases if name in headers), None)
+            for normalized, aliases in field_map.items()
+        }
+        missing = sorted(
+            normalized for normalized, original in selected.items() if original is None
+        )
         if missing:
             raise ValueError(f"{self.source_id} contract mismatch; missing columns: {missing}")
         return [
             {
-                **{normalized: row[original].strip() for original, normalized in field_map.items()},
+                **{
+                    normalized: "" if row[original] is None else str(row[original]).strip()
+                    for normalized, original in selected.items()
+                    if original is not None
+                },
                 "source_id": self.source_id,
                 "source_partition": artifact.item.partition,
             }
-            for row in reader
+            for row in values
         ]
 
     async def health_check(self) -> SourceHealth:

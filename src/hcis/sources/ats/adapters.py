@@ -27,7 +27,14 @@ class PublicFeedAdapter(ABC):
         async with httpx.AsyncClient(follow_redirects=True, timeout=60) as client:
             response = await client.get(self.feed_url)
             response.raise_for_status()
-            return self.parse_payload(response.json())
+            payload = response.json()
+            key = "content" if self.source_id == "smartrecruiters" else "jobs"
+            rows = payload if self.source_id == "lever" else (
+                payload.get(key) if isinstance(payload, dict) else None
+            )
+            if not isinstance(rows, list):
+                raise ValueError(f"Invalid {self.source_id} feed: missing job list")
+            return self.parse_payload(payload)
 
     @abstractmethod
     def parse_payload(self, payload: Any) -> list[JobPost]: ...

@@ -12,7 +12,7 @@ def test_human_review_is_durable_and_audited(tmp_path: Path, monkeypatch: object
     monkeypatch.setenv("HCIS_HOME", str(tmp_path))  # type: ignore[attr-defined]
     get_settings.cache_clear()
     client = TestClient(app)
-    headers = {"X-API-Token": "local-development-only"}
+    headers = {"X-API-Token": get_settings().api_token}
 
     response = client.post(
         "/reviews",
@@ -27,5 +27,10 @@ def test_human_review_is_durable_and_audited(tmp_path: Path, monkeypatch: object
 
     assert response.status_code == 200
     assert client.get("/reviews", headers=headers).json()[0]["is_current"] is True
-    assert "HUMAN_REVIEW_CREATED" in (tmp_path / "data" / "logs" / "audit.jsonl").read_text()
+    assert (tmp_path / "data" / "hcis.sqlite3").exists()
+    from hcis.repositories import LocalDataStore
+
+    assert LocalDataStore(tmp_path / "data" / "hcis.sqlite3").audit_events()[0]["event"] == (
+        "HUMAN_REVIEW_CREATED"
+    )
     get_settings.cache_clear()

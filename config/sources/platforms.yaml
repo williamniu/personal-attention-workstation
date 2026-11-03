@@ -1,0 +1,60 @@
+status: ACTIVE
+retention_days: 90
+schedule:
+  driver: codex_heartbeat
+  timezone: America/Chicago
+  hour: 8
+  minute: 0
+sources:
+  myvisajobs:
+    label: MyVisaJobs
+    status: ACTIVE
+    mode: browser_snapshot
+    snapshot: data/imports/myvisajobs.json
+  h1bdata:
+    label: H1BData.info
+    status: ACTIVE
+    mode: http
+    year: latest
+    company_enrichment_limit: 25
+    max_role_leads_per_query: 60
+    role_queries:
+      william:
+        - Member of Technical Staff
+        - AI Agent Engineer
+        - Agentic AI
+        - Machine Learning Engineer
+        - AI Platform Engineer
+        - Applied Scientist
+        - Research Engineer
+        - Forward Deployed Engineer
+        - Generative AI Engineer
+        - MLOps Engineer
+        - AI Solutions Engineer
+        - Software Engineer AI
+        - Data Scientist
+        - Analytics Data Scientist
+      girlfriend:
+        - AI Product Manager
+        - Product Manager
+        - Product Marketing Manager
+        - Marketing Specialist
+        - Market Research Analyst
+        - Marketing Manager
+        - Growth Marketing
+        - Digital Marketing
+        - Business Analyst
+        - Management Analyst
+        - Project Manager
+        - Operations Analyst
+        - Customer Success Manager
+  h1bgrader:
+    label: H1BGrader
+    status: ACTIVE
+    mode: browser_snapshot
+    snapshot: data/imports/h1bgrader.json
+  careers:
+    label: Official Careers
+    status: ACTIVE
+    mode: public_ats
+    snapshot: data/imports/careers.json

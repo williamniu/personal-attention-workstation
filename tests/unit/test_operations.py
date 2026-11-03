@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+import json
 import logging
+import sqlite3
 from pathlib import Path
 
 import pytest
-import yaml  # type: ignore[import-untyped]
 
+from hcis.cli import Services
 from hcis.domain.runtime import DesiredState
 from hcis.notifications import NotificationOutbox, build_opportunity_alert
 from hcis.observability import JsonFormatter
 from hcis.operations import BackupManager, plan_recovery
 from hcis.settings import Settings
+from hcis.sources.platforms import ingest_snapshot
 from hcis.workflows import run_once
 
 
@@ -33,6 +36,20 @@ def test_desired_state_recovery_plan() -> None:
     assert scheduled.run_scheduler and scheduled.catch_up_incremental
     assert paused.run_services and not paused.run_scheduler
     assert not stopped.run_services
+
+
+def test_service_status_treats_signal_permission_error_as_running(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    services = Services(Settings(home=tmp_path))
+    services.runtime.mkdir(parents=True)
+    services._pid_file("api").write_text("123")
+
+    def deny_signal(pid: int, signal_number: int) -> None:
+        raise PermissionError
+
+    monkeypatch.setattr("hcis.cli.os.kill", deny_signal)
+    assert services.status()["services"]["api"] is True  # type: ignore[index]
 
 
 def test_notification_retry_is_visible_and_not_duplicated() -> None:
@@ -88,19 +105,60 @@ def test_unknown_alert_requires_human_verification() -> None:
     assert "UNKNOWN — HUMAN VERIFICATION REQUIRED" in alert["body"]
 
 
-def test_compose_has_local_scheduler_and_resource_limits() -> None:
-    project = Path(__file__).parents[2]
-    compose = yaml.safe_load((project / "docker-compose.yml").read_text())
-    assert "scheduler" in compose["services"]
-    assert compose["services"]["api"]["mem_limit"] == "1g"
-    assert compose["services"]["scheduler"]["restart"] == "unless-stopped"
+def test_sqlite_database_is_local(tmp_path: Path) -> None:
+    settings = Settings(home=tmp_path)
+    assert settings.database_path == tmp_path / "data" / "hcis.sqlite3"
+    from hcis.repositories import LocalDataStore
+
+    LocalDataStore(settings.database_path).append("reviews", {"id": "review-1"}, "CREATED")
+    with sqlite3.connect(settings.database_path) as connection:
+        assert connection.execute("SELECT count(*) FROM local_records").fetchone() == (1,)
 
 
 def test_run_once_reports_disabled_sources_honestly(tmp_path: Path) -> None:
     config = tmp_path / "config" / "sources"
     config.mkdir(parents=True)
-    (config / "official.yaml").write_text("status: BLOCKED_EXTERNAL\n")
+    (config / "platforms.yaml").write_text("status: DISABLED\nsources: {}\n")
     result = run_once(Settings(home=tmp_path))
     assert result["status"] == "SUCCESS_NO_ENABLED_SOURCES"
     assert result["inserted_count"] == 0
-    assert len(list((tmp_path / "data" / "job_runs").glob("*.json"))) == 1
+
+
+def test_platform_keeps_sponsor_without_public_job(tmp_path: Path) -> None:
+    config = tmp_path / "config" / "sources"
+    config.mkdir(parents=True)
+    (config / "platforms.yaml").write_text(
+        "status: ACTIVE\nretention_days: 90\nsources:\n"
+        "  myvisajobs:\n    status: ACTIVE\n    snapshot: data/imports/myvisajobs.json\n"
+    )
+    snapshot = tmp_path / "myvisajobs.json"
+    snapshot.write_text(
+        json.dumps(
+            {
+                "source": "myvisajobs",
+                "captured_at": "2026-08-16T00:00:00+00:00",
+                "jobs": [],
+                "companies": [
+                    {
+                        "name": "Sponsor Without Careers Page",
+                        "h1b_history_observed": True,
+                        "h1b_record_count": 3,
+                    }
+                ],
+                "evidence": [],
+            }
+        )
+    )
+
+    from hcis.repositories import LocalDataStore
+
+    settings = Settings(home=tmp_path)
+    result = ingest_snapshot(settings, "myvisajobs", snapshot)
+    companies = LocalDataStore(tmp_path / "data" / "hcis.sqlite3").list("companies")
+    assert result["status"] == "STALE_SNAPSHOT"
+    assert companies[0]["h1b_history_observed"] is True
+    assert LocalDataStore(settings.database_path).list("jobs") == []
+
+    repeated = ingest_snapshot(settings, "myvisajobs", snapshot)
+    assert repeated["inserted"] == 0
+    assert repeated["updated"] == 0

@@ -22,7 +22,7 @@ class BackupManager:
 
         manifest = {
             "created_at": datetime.now(UTC).isoformat(),
-            "postgres_dump": "BLOCKED_EXTERNAL",
+            "sqlite_database": "data/hcis.sqlite3",
             "included_roots": self.allowed_roots,
             "excluded": ["private", "browser", "secrets", "data/backups"],
         }

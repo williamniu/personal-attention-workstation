@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, cast
 
 import yaml  # type: ignore[import-untyped]
 from fastapi import Body, Depends, FastAPI, HTTPException
@@ -13,6 +13,14 @@ from hcis.profiles.loader import load_profile
 from hcis.repositories import LocalDataStore
 from hcis.security import require_api_token
 from hcis.settings import get_settings
+from hcis.sources.platforms import (
+    MANUAL_STATUSES,
+    PLATFORM_SOURCES,
+    recompute_opportunities,
+    refresh_plan,
+    refresh_source,
+)
+from hcis.workflows.runner import run_once
 
 app = FastAPI(title="HCIS", version="0.7.0")
 Protected = Annotated[None, Depends(require_api_token)]
@@ -23,7 +31,7 @@ def state_store() -> StateStore:
 
 
 def data_store() -> LocalDataStore:
-    return LocalDataStore(get_settings().data_dir / "runtime")
+    return LocalDataStore(get_settings().database_path)
 
 
 @app.get("/health")
@@ -58,8 +66,7 @@ def system_stop(_: Protected) -> dict[str, object]:
 
 @app.post("/system/run-once")
 def system_run_once(_: Protected) -> dict[str, object]:
-    data_store().append("job_runs", {"status": "QUEUED", "flow_name": "incremental"}, "RUN_ONCE")
-    return {"status": "QUEUED"}
+    return run_once(get_settings())
 
 
 @app.get("/candidates")
@@ -70,12 +77,91 @@ def candidates(_: Protected) -> list[dict[str, object]]:
 
 @app.get("/source-health")
 def source_health(_: Protected) -> list[dict[str, object]]:
-    root = get_settings().home / "config" / "sources"
-    result = []
-    for path in sorted(root.glob("*.yaml")):
-        payload = yaml.safe_load(path.read_text())
-        result.append({"source": path.stem, "status": payload.get("status", "UNKNOWN")})
+    root = get_settings().home / "config" / "sources" / "platforms.yaml"
+    payload = yaml.safe_load(root.read_text())
+    configured = payload.get("sources", {})
+    runtime = {str(row.get("source")): row for row in data_store().list("source_health")}
+    result: list[dict[str, object]] = []
+    for source in PLATFORM_SOURCES:
+        source_config = configured.get(source, {})
+        result.append(
+            {
+                "source": source,
+                "configured_status": source_config.get("status", "UNKNOWN"),
+                "mode": source_config.get("mode", "UNKNOWN"),
+                **runtime.get(source, {"status": "NOT_RUN"}),
+            }
+        )
     return result
+
+
+@app.get("/refresh-plan")
+def pending_refreshes(_: Protected) -> list[dict[str, object]]:
+    return refresh_plan(get_settings())
+
+
+@app.post("/sources/{source}/refresh")
+def source_refresh(source: str, _: Protected) -> dict[str, object]:
+    if source not in PLATFORM_SOURCES:
+        raise HTTPException(status_code=404, detail="Unknown source")
+    return refresh_source(get_settings(), source, request_new_snapshot=True)
+
+
+@app.get("/opportunities/{candidate_id}")
+def opportunities(
+    candidate_id: str,
+    _: Protected,
+    limit: int = 20,
+    offset: int = 0,
+    tag: str | None = None,
+    manual_status: str | None = None,
+    include_rejected: bool = False,
+) -> list[dict[str, object]]:
+    if candidate_id not in {"william", "girlfriend"}:
+        raise HTTPException(status_code=404, detail="Unknown candidate")
+    rows = [
+        row
+        for row in data_store().list("opportunities")
+        if row.get("candidate_id") == candidate_id
+        and (include_rejected or row.get("action_lane") != "REJECT")
+        and (not tag or tag in cast(list[object], row.get("tags", [])))
+        and (not manual_status or row.get("manual_status") == manual_status)
+    ]
+    rows.sort(key=lambda row: float(str(row.get("score", 0))), reverse=True)
+    safe_limit = min(max(limit, 1), 200)
+    return rows[max(offset, 0) : max(offset, 0) + safe_limit]
+
+
+@app.post("/opportunities/{candidate_id}/{job_id}/state")
+def update_opportunity_state(
+    candidate_id: str,
+    job_id: str,
+    _: Protected,
+    payload: Annotated[dict[str, object], Body()],
+) -> dict[str, object]:
+    if candidate_id not in {"william", "girlfriend"}:
+        raise HTTPException(status_code=404, detail="Unknown candidate")
+    if not any(row.get("id") == job_id for row in data_store().list("jobs")):
+        raise HTTPException(status_code=404, detail="Job not found")
+    manual_status = str(payload.get("manual_status", "NEW"))
+    if manual_status not in MANUAL_STATUSES:
+        raise HTTPException(status_code=422, detail="Unknown manual status")
+    key = f"{candidate_id}:{job_id}"
+    existing = data_store().get("opportunity_states", key) or {}
+    state = {
+        **existing,
+        "id": key,
+        "candidate_id": candidate_id,
+        "job_id": job_id,
+        "manual_status": manual_status,
+        "favorite": bool(payload.get("favorite", existing.get("favorite", False))),
+        "notes": str(payload.get("notes", existing.get("notes", ""))),
+    }
+    _write_status, saved = data_store().upsert(
+        "opportunity_states", key, state, "OPPORTUNITY_STATE_UPDATED"
+    )
+    recompute_opportunities(get_settings())
+    return saved
 
 
 @app.get("/{collection}")
@@ -94,6 +180,11 @@ def collection(
         "browser-tasks",
         "mail-intake",
         "reports",
+        "opportunities",
+        "opportunity_states",
+        "source_health",
+        "refresh_requests",
+        "platform_evidence",
     }
     if collection not in allowed:
         raise HTTPException(status_code=404, detail="Unknown collection")

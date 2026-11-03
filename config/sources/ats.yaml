@@ -1,9 +1,132 @@
-status: BLOCKED_EXTERNAL
-notes: Live board tokens and company site identifiers are not configured.
+status: ACTIVE
+notes: Public employer ATS feeds used as official current-job truth.
 providers:
-  greenhouse: []
-  lever: []
-  ashby: []
-  smartrecruiters: []
-  career_pages: []
+  greenhouse:
+    # --- 原有公司 ---
+    - id: anthropic
+      company: Anthropic
+      company_type: AI_STARTUP
+    - id: scaleai
+      company: Scale AI
+      company_type: AI_STARTUP
+    - id: xai
+      company: xAI
+      company_type: AI_STARTUP
+    - id: togetherai
+      company: Together AI
+      company_type: AI_STARTUP
+    - id: snorkelai
+      company: Snorkel AI
+      company_type: AI_STARTUP
+    - id: labelbox
+      company: Labelbox
+      company_type: AI_STARTUP
+    - id: gleanwork
+      company: Glean
+      company_type: AI_STARTUP
+    - id: cresta
+      company: Cresta
+      company_type: AI_STARTUP
+    - id: arizeai
+      company: Arize AI
+      company_type: AI_STARTUP
+    # --- 新增：门槛相对温和 / 偏重落地交付的 B-D轮/Pre-IPO 公司 ---
+    - id: dataiku
+      company: Dataiku
+      company_type: AI_STARTUP # 商业化成熟，企业级 AI 平台，大量 Solutions Engineer / Applied AI 岗位，招聘门槛比顶尖 Research Lab 友好
+    - id: instabase
+      company: Instabase
+      company_type: AI_STARTUP # 专注于非结构化数据 AI Agent & 商业交付，常年大量招募 Forward Deployed Engineer (FDE)
+    # https://coreweave.com/careers/weights-biases uses data-board-id=weights_and_biases.
+    - id: weights_and_biases
+      company: Weights & Biases
+      company_type: AI_STARTUP # MLOps / AI 观测标杆，大量招募 ML/AI Solutions Engineer，偏工程与客户赋能
+    - id: groq
+      company: Groq
+      company_type: AI_STARTUP # LPU 推理芯片与云服务，急速扩展中，招募大量 Field/Solutions/Applied AI 工程师
 
+  ashby:
+    # Verified 2026-09-10 from the companies' official Careers links.
+    - id: pinecone
+      company: Pinecone
+      company_type: AI_STARTUP
+    - id: unstructured
+      company: Unstructured
+      company_type: AI_STARTUP
+    # --- 原有公司 ---
+    - id: harvey
+      company: Harvey
+      company_type: AI_STARTUP
+    - id: sierra
+      company: Sierra
+      company_type: AI_STARTUP
+    - id: gamma
+      company: Gamma
+      company_type: AI_STARTUP
+    - id: faction
+      company: Faction
+      company_type: AI_STARTUP
+    - id: cognition
+      company: Cognition
+      company_type: AI_STARTUP
+    - id: decagon
+      company: Decagon
+      company_type: AI_STARTUP
+    - id: langchain
+      company: LangChain
+      company_type: AI_STARTUP
+    - id: modal
+      company: Modal
+      company_type: AI_STARTUP
+    - id: baseten
+      company: Baseten
+      company_type: AI_STARTUP
+    - id: elevenlabs
+      company: ElevenLabs
+      company_type: AI_STARTUP
+    - id: vapi
+      company: Vapi
+      company_type: AI_STARTUP
+    - id: mercor
+      company: Mercor
+      company_type: AI_STARTUP
+    - id: writer
+      company: Writer
+      company_type: AI_STARTUP
+    - id: cohere
+      company: Cohere
+      company_type: AI_STARTUP
+    - id: cursor
+      company: Cursor (Anysphere)
+      company_type: AI_STARTUP
+    - id: perplexity
+      company: Perplexity AI
+      company_type: AI_STARTUP
+    - id: braintrust
+      company: Braintrust
+      company_type: AI_STARTUP
+    - id: magic.dev
+      company: Magic.dev
+      company_type: AI_STARTUP
+    - id: poolside
+      company: Poolside
+      company_type: AI_STARTUP
+    - id: anyscale
+      company: Anyscale
+      company_type: AI_STARTUP
+    # --- 新增：工程落地导向 / 招聘规模大的应用与生态企业 ---
+    - id: llamaindex
+      company: LlamaIndex
+      company_type: AI_STARTUP # RAG/Agent 框架与云服务，极度看重实际代码与社区落地，面试侧重工程实践而非算法推导
+    - id: hebbia-ai
+      company: Hebbia AI
+      company_type: AI_STARTUP # 金融/法律文档 Agent 领头羊，开放大量的 Forward Deployed Engineer (FDE) 岗位
+
+  lever:
+    # --- 新增：Lever ATS 渠道的代表性企业 ---
+    - id: palantir
+      company: Palantir
+      company_type: LATE_STAGE # Forward Deployed Engineer (FDE) 概念的开创者，规模庞大，对工程素质与交付能力有标准化培养体系
+    - id: mistral
+      company: Mistral AI
+      company_type: AI_STARTUP # 顶尖开源模型厂商，部署与 API 生态极速扩张中，包含很多 Applied AI / FDE 岗位

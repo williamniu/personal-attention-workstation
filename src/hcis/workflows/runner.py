@@ -1,49 +1,77 @@
 from __future__ import annotations
 
-import json
-import uuid
 from datetime import UTC, datetime
-from pathlib import Path
-from typing import cast
+from uuid import uuid4
 
-import yaml  # type: ignore[import-untyped]
-
+from hcis.repositories import LocalDataStore
 from hcis.settings import Settings
+from hcis.sources.platforms import PLATFORM_SOURCES, load_platform_config, refresh_source
+
+ACTIVE_STATES = {"ACTIVE", "ENABLED"}
 
 
-def _source_states(config_root: Path) -> list[dict[str, object]]:
-    states = []
-    for path in sorted(config_root.glob("*.yaml")):
-        payload = cast(dict[str, object], yaml.safe_load(path.read_text()))
-        states.append({"source": path.stem, "status": payload.get("status", "UNKNOWN")})
-    return states
+def _count(value: object) -> int:
+    return int(str(value or 0))
 
 
-def run_once(settings: Settings) -> dict[str, object]:
+def run_once(settings: Settings, sources: set[str] | None = None) -> dict[str, object]:
+    """Refresh approved platforms only; browser-backed sources consume local snapshots."""
     started = datetime.now(UTC)
-    run_id = str(uuid.uuid4())
-    sources = _source_states(settings.home / "config" / "sources")
+    run_id = str(uuid4())
+    config = load_platform_config(settings.home)
+    platform_configs = config.get("sources", {})
+    assert isinstance(platform_configs, dict)
+    selected = sources or set(PLATFORM_SOURCES)
     enabled = [
-        source for source in sources if source["status"] not in {"BLOCKED_EXTERNAL", "DISABLED"}
+        source
+        for source in PLATFORM_SOURCES
+        if source in selected
+        and isinstance(platform_configs.get(source), dict)
+        and platform_configs[source].get("status") in ACTIVE_STATES
     ]
-    result: dict[str, object] = {
+    source_results: dict[str, object] = {}
+    errors: list[str] = []
+    inserted = updated = skipped = 0
+    for source in enabled:
+        try:
+            source_result = refresh_source(settings, source)
+            source_results[source] = source_result
+            inserted += _count(source_result.get("inserted", 0))
+            updated += _count(source_result.get("updated", 0))
+            skipped += _count(source_result.get("skipped", 0))
+            if source_result.get("status") not in {"HEALTHY", "SUCCESS"}:
+                errors.append(
+                    f"{source}: {source_result.get('status')}: {source_result.get('message', '')}"
+                )
+        except Exception as error:  # noqa: BLE001
+            errors.append(f"{source}: {error}")
+    if not enabled:
+        status = "SUCCESS_NO_ENABLED_SOURCES"
+    elif errors and inserted + updated == 0:
+        status = "PARTIAL_UNAVAILABLE"
+    elif errors:
+        status = "PARTIAL_FAILURE"
+    else:
+        status = "SUCCESS"
+    run_result: dict[str, object] = {
         "id": run_id,
-        "flow_name": "incremental_cycle",
-        "idempotency_key": f"manual:{run_id}",
+        "flow_name": "platform_refresh",
+        # Attempts are auditable; deterministic snapshot digests enforce data idempotency.
+        "attempt_id": run_id,
         "started_at": started.isoformat(),
         "finished_at": datetime.now(UTC).isoformat(),
-        "status": "SUCCESS" if enabled else "SUCCESS_NO_ENABLED_SOURCES",
-        "inserted_count": 0,
-        "updated_count": 0,
-        "skipped_count": 0,
-        "closed_count": 0,
-        "failed_count": 0,
-        "llm_calls": 0,
-        "tokens_in": 0,
-        "tokens_out": 0,
-        "source_states": sources,
+        "status": status,
+        "inserted_count": inserted,
+        "updated_count": updated,
+        "skipped_count": skipped,
+        "failed_count": len(errors),
+        "source_states": [
+            {"source": source, "status": platform_configs[source].get("status", "UNKNOWN")}
+            for source in PLATFORM_SOURCES
+            if isinstance(platform_configs.get(source), dict)
+        ],
+        "source_results": source_results,
+        "errors": errors,
     }
-    path = settings.data_dir / "job_runs" / f"{run_id}.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(result, indent=2) + "\n")
-    return result
+    LocalDataStore(settings.database_path).append("job_runs", run_result, "JOB_RUN_COMPLETED")
+    return run_result

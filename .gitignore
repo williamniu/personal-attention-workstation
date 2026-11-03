@@ -16,3 +16,6 @@ reports/*
 !reports/.gitkeep
 exports/*
 !exports/.gitkeep
+
+output/
+tmp/

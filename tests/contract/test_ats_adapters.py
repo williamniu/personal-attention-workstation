@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 
+import httpx
 import pytest
 
 from hcis.sources.ats import AshbyAdapter, GreenhouseAdapter, LeverAdapter, SmartRecruitersAdapter
@@ -36,3 +38,15 @@ def test_career_page_jsonld_contract() -> None:
     )
     assert posts[0].external_job_id == "career-1"
     assert posts[0].location == "Boston, MA"
+
+
+def test_invalid_feed_is_not_treated_as_an_empty_complete_board(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = httpx.AsyncClient
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, json={"error": "busy"}))
+    monkeypatch.setattr(
+        httpx, "AsyncClient", lambda **kwargs: client(transport=transport, **kwargs),
+    )
+    with pytest.raises(ValueError, match="missing job list"):
+        asyncio.run(GreenhouseAdapter("example").fetch_posts())

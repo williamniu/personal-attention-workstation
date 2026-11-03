@@ -1,5 +1,6 @@
 schedule:
-  scans_per_day: 3
+  timezone: America/New_York
+  daily_at: "09:00"
   full_reconciliation: weekly
   entity_audit: monthly
 resources:

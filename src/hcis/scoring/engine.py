@@ -53,6 +53,8 @@ class ScoreInput(BaseModel):
     company_survival: float = Field(ge=0, le=100)
     location: float = Field(ge=0, le=100)
     compensation: float = Field(ge=0, le=100)
+    bilingual_advantage: float = Field(default=50, ge=0, le=100)
+    company_type_fit: float = Field(default=50, ge=0, le=100)
     verification_value: float = Field(ge=0, le=100)
     hard_gate_reason: str | None = None
 
@@ -117,6 +119,8 @@ def score_job(value: ScoreInput, config: ScoringConfig) -> ScoreResult:
             "experience_feasibility_score": value.experience_feasibility,
             "location_score": value.location,
             "compensation_score": value.compensation,
+            "bilingual_advantage_score": value.bilingual_advantage,
+            "company_type_score": value.company_type_fit,
         }
     else:
         components = {
@@ -128,6 +132,8 @@ def score_job(value: ScoreInput, config: ScoringConfig) -> ScoreResult:
             "company_quality_score": value.company_quality,
             "location_score": value.location,
             "compensation_score": value.compensation,
+            "bilingual_advantage_score": value.bilingual_advantage,
+            "company_type_score": value.company_type_fit,
         }
     total_weight = sum(config.weights.values())
     overall = sum(components[key] * weight for key, weight in config.weights.items()) / total_weight
