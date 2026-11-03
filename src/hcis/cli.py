@@ -27,6 +27,7 @@ from hcis.sources.platforms import (
 )
 from hcis.workbench_scan import (
     audit_channels,
+    ingest_browser_capture,
     ingest_workbench_directory,
     publish_brief,
     scan_workbench,
@@ -240,13 +241,15 @@ def _parser() -> argparse.ArgumentParser:
                            choices=["start", "stop", "restart", "status", "logs"])
     scan = commands.add_parser("scan-workbench")
     scan.add_argument(
-        "--force", action="store_true", help="Read new evidence even after today's run"
+        "--force", action="store_true", help="Rebuild browser work and review from saved evidence"
     )
-    scan.add_argument("--source", help="Retry only one configured discovery source")
+    scan.add_argument("--source", help="Queue only one registered browser source")
     scan.add_argument("--prepare-only", action="store_true", help="Prepare review from saved evidence")
     commands.add_parser("audit-workbench-sources")
     discovery_import = commands.add_parser("ingest-workbench-directory")
     discovery_import.add_argument("snapshot", type=Path)
+    browser_import = commands.add_parser("ingest-workbench-browser")
+    browser_import.add_argument("snapshot", type=Path)
     publish = commands.add_parser("publish-workbench-brief")
     publish.add_argument("review", type=Path)
     return parser
@@ -353,6 +356,9 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(audit_channels(settings), ensure_ascii=False, indent=2))
     elif args.command == "ingest-workbench-directory":
         print(json.dumps(ingest_workbench_directory(settings, args.snapshot),
+                         ensure_ascii=False, indent=2))
+    elif args.command == "ingest-workbench-browser":
+        print(json.dumps(ingest_browser_capture(settings, args.snapshot),
                          ensure_ascii=False, indent=2))
     elif args.command == "publish-workbench-brief":
         result = publish_brief(settings, args.review)

@@ -10,7 +10,7 @@ import json
 import re
 import shutil
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
@@ -26,12 +26,9 @@ from hcis.sources.discovery import (
     PublicWeb,
     Row,
     domain,
-    fetch_directory,
     identify_jobs,
     job_url,
     public_url,
-    read_board,
-    read_employer,
     stable_hash,
 )
 from hcis.workbench import PREFIX, candidates
@@ -243,15 +240,24 @@ def sync_sources(store: LocalDataStore, config: Row) -> None:
             **previous,
             "id": channel["id"],
             "name": channel["name"],
-            "url": channel["url"],
+            "url": spec["url"] if spec else channel["url"],
             "mode": spec["mode"] if spec else "browser_review",
             "policy_url": spec.get("policy_url") if spec else None,
             "policy_reviewed_at": "2026-11-02" if spec else None,
             "policy_note": spec["reason"]
             if spec
             else "原渠道入口保留；需逐源核查公开列表、条款与浏览器覆盖后摄入。不是已自动采集。",
+            "user_deferred": bool(spec and spec.get("user_deferred")),
+            "deferred_reason": spec.get("deferred_reason") if spec else None,
         }
-        if record["mode"] == "restricted":
+        if record["mode"] == "browser_session" and previous.get("mode") != "browser_session":
+            record.update(
+                status="BROWSER_SESSION_REQUIRED", coverage_complete=False,
+                capture_method="iab", browser_state="UNKNOWN",
+                message="采集路径已切换内置浏览器；历史 HTTP / API 记录保留原日期，"
+                        "待本轮页面核验。",
+            )
+        elif record["mode"] == "restricted":
             record.update(status="RESTRICTED", coverage_complete=False)
         elif not previous:
             record.update(status="QUEUED", coverage_complete=False)
@@ -324,7 +330,31 @@ def audit_channels(settings: Settings) -> list[Row]:
     return receipts
 
 
-def ingest_directory(store: LocalDataStore, payload: Row) -> Row:
+def _directory_identity(store: LocalDataStore, source: str, item: Row) -> str:
+    identity = item["detail_url"] + "|" + item["name"].casefold()
+    identifier = source + ":" + stable_hash(identity)[:20]
+    if store.get(SCAN + "entries", identifier):
+        return identifier
+    # A new view or a verified display name must not duplicate an existing company.
+    by_detail = [row for row in store.list(SCAN + "entries")
+                 if row["source"] == source and row.get("detail_url") == item["detail_url"]]
+    if len(by_detail) == 1:
+        return str(by_detail[0]["id"])
+    matches = [
+        row for row in cast(list[Row], store.list(SCAN + "entries"))
+        if row["source"] == source and (
+            (row.get("detail_url") == item["detail_url"]
+             and str(row.get("directory_name", row["name"])).casefold()
+             == item["name"].casefold())
+            or (item.get("website") and row.get("website")
+                and domain(row["website"]) == domain(item["website"])
+                and row["name"].casefold() == item["name"].casefold())
+        )
+    ]
+    return str(matches[0]["id"]) if len(matches) == 1 else identifier
+
+
+def ingest_directory(store: LocalDataStore, payload: Row, *, atomic: bool = True) -> Row:
     source = str(payload.get("source", ""))
     captured = _time(payload.get("captured_at"))
     rows = payload.get("companies")
@@ -354,9 +384,8 @@ def ingest_directory(store: LocalDataStore, payload: Row) -> Row:
         item["detail_url"] = public_url(str(item.get("detail_url", "")))
         if item.get("website"):
             item["website"] = public_url(item["website"])
-        identity = item["detail_url"] + "|" + item["name"].casefold()
         item.update(
-            id=source + ":" + stable_hash(identity)[:20],
+            id=_directory_identity(store, source, item),
             source=source,
             source_hash=stable_hash(item),
         )
@@ -364,7 +393,7 @@ def ingest_directory(store: LocalDataStore, payload: Row) -> Row:
     if len({item["id"] for item in normalized}) != len(normalized):
         raise ValueError("Duplicate identities in directory snapshot")
     inserted = changed = 0
-    with store.transaction():
+    with store.transaction() if atomic else nullcontext():
         for item in normalized:
             old = _without_recorded(store.get(SCAN + "entries", item["id"]) or {})
             if not old:
@@ -383,6 +412,9 @@ def ingest_directory(store: LocalDataStore, payload: Row) -> Row:
                 else old.get("changed_at"),
                 "identity_status": "VERIFIED_DOMAIN" if item.get("website") else "DETAIL_REQUIRED",
             }
+            if payload.get("capture_method") == "iab":
+                record.update(directory_capture_method="iab",
+                              directory_browser_observed_at=payload["captured_at"])
             if old.get("name_verified") and item.get("name_verified") is False:
                 record.update(name=old["name"], name_verified=True)
             if not item.get("website") and old.get("website"):
@@ -433,13 +465,16 @@ def ingest_workbench_directory(settings: Settings, path: Path) -> Row:
             "WORKBENCH_WATCHLIST_REGISTERED",
         )
     registered = store.get(SCAN + "sources", source)
+    configured = {row["id"]: row for row in load_config(settings.home)["sources"]}
+    if source in configured and configured[source]["mode"] == "browser_session":
+        raise ValueError("This source requires ingest-workbench-browser and IAB capture evidence")
     if not registered or registered.get("mode") == "restricted":
         raise ValueError("Source is unknown or restricted; do not ingest an automated capture")
     return ingest_directory(store, payload)
 
 
 def ingest_news(store: LocalDataStore, data: Row, observed_at: str) -> int:
-    """Keep the official free summary and its raw date; an empty window erases nothing."""
+    """Legacy offline import only; browser scans never call the old free API."""
     if _time(observed_at) is None or not isinstance(data.get("items"), list):
         raise ValueError("News requires a capture timestamp and items list")
     rows = []
@@ -470,7 +505,240 @@ def ingest_news(store: LocalDataStore, data: Row, observed_at: str) -> int:
     return inserted
 
 
-def save_research(store: LocalDataStore, result: Row) -> Row:
+def _browser_pages(rows: Any, captured: datetime) -> list[Row]:
+    if not isinstance(rows, list):
+        raise ValueError("Browser pages must be a list")
+    pages = []
+    for row in rows:
+        observed = _time(row.get("observed_at")) if isinstance(row, dict) else None
+        if not observed or observed > captured or not str(row.get("text", "")).strip():
+            raise ValueError("Rendered pages require text and an actual observation time")
+        if row.get("text_kind", "RENDERED_TEXT") not in {"RENDERED_TEXT", "BROWSER_REVIEW_SUMMARY"}:
+            raise ValueError("Unknown browser page text representation")
+        pages.append({
+            "url": public_url(str(row.get("url", ""))),
+            "title": str(row.get("title", "")), "text": row["text"],
+            "observed_at": row["observed_at"],
+            "text_kind": row.get("text_kind", "RENDERED_TEXT"),
+            "links": [{"url": public_url(str(link["url"])),
+                       "label": str(link.get("label", ""))} for link in row.get("links", [])],
+        })
+    return pages
+
+
+def _official_job_chain(company: Row, pages: list[Row], url: str) -> bool:
+    """Require rendered employer pages and their visible links to the captured JD."""
+    website = company.get("website")
+    if not website or domain(url) in {"ycombinator.com", "workatastartup.com"}:
+        return False
+    reachable = {job_url(page["url"]) for page in pages
+                 if domain(page["url"]) == domain(website)}
+    for _ in pages:
+        added = {job_url(link["url"]) for page in pages
+                 if job_url(page["url"]) in reachable for link in page["links"]}
+        if added.issubset(reachable):
+            break
+        reachable.update(added)
+    return job_url(url) in reachable
+
+
+def ingest_browser_capture(settings: Settings, path: Path) -> Row:
+    """Ingest rendered IAB observations atomically; this function makes no web requests."""
+    payload = json.loads(path.read_text())
+    config = load_config(settings.home)
+    specs = {row["id"]: row for row in config["sources"]}
+    source = str(payload.get("source", ""))
+    store = LocalDataStore(settings.database_path)
+    spec = specs.get(source) or store.get(SCAN + "sources", source) or {}
+    if spec.get("mode") not in {"browser_session", "browser_review"}:
+        raise ValueError("Unknown source or source is not registered for browser capture")
+    captured = _time(payload.get("captured_at"))
+    browser = payload.get("browser", {})
+    coverage = payload.get("coverage", {})
+    status = payload.get("status")
+    success = status in {"CAPTURED", "PARTIAL_CAPTURE"}
+    if (payload.get("schema_version") != 2 or not captured
+            or captured > datetime.now(UTC) + timedelta(minutes=5)
+            or browser.get("type") != "iab"
+            or browser.get("login_state") not in {
+                "SIGNED_IN", "SIGNED_OUT", "NOT_REQUIRED", "UNKNOWN"}
+            or not isinstance(coverage, dict) or not coverage.get("scope")
+            or status not in {"CAPTURED", "PARTIAL_CAPTURE", "LOGIN_REQUIRED",
+                              "VERIFICATION_REQUIRED", "MEMBERSHIP_REQUIRED",
+                              "BLANK_PAGE", "UNAVAILABLE"}):
+        raise ValueError("Invalid IAB capture schema / timestamp / browser / status / coverage")
+    if browser["login_state"] in {"SIGNED_IN", "SIGNED_OUT"} and not browser.get("login_evidence"):
+        raise ValueError("Login state requires evidence visible on the current page")
+    browser = {key: browser.get(key) for key in (
+        "type", "context_id", "login_state", "login_evidence")}
+    if coverage.get("complete") is True and (
+        status != "CAPTURED" or coverage.get("render_complete") is not True
+        or coverage.get("has_more") is not False
+    ):
+        raise ValueError("Complete coverage requires a fully rendered, exhausted browser view")
+    digest = stable_hash(payload)
+    receipt_id = source + ":browser:" + digest
+    if old := store.get(SCAN + "imports", receipt_id):
+        return {**old, "idempotent_replay": True, "inserted": 0, "changed": 0,
+                "new_jobs": 0, "changed_jobs": 0, "new_news": 0}
+    health = _without_recorded(store.get(SCAN + "sources", source) or {})
+    previous = _time(health.get("browser_checked_at"))
+    if previous and captured <= previous:
+        raise ValueError("Older or reused capture time cannot replace a newer browser attempt")
+    pages = _browser_pages(payload.get("pages", []), captured)
+    if success and not pages:
+        raise ValueError("A successful browser capture needs rendered page evidence")
+    companies = []
+    for row in payload.get("companies", []):
+        company = {key: row[key] for key in (
+            "name", "detail_url", "website", "description", "stage", "category",
+            "tags", "name_verified", "company_status",
+        ) if key in row}
+        if not str(company.get("name", "")).strip():
+            raise ValueError("Company entries require a name")
+        company["detail_url"] = public_url(str(company.get("detail_url", "")))
+        if company.get("website"):
+            company["website"] = public_url(company["website"])
+        company.update(id=_directory_identity(store, source, company), source=source)
+        companies.append(company)
+    if len({row["id"] for row in companies}) != len(companies):
+        raise ValueError("Duplicate company identities in browser capture")
+    known = {row["id"]: row for row in cast(list[Row], store.list(SCAN + "entries"))
+             if row["source"] == source}
+    known.update({row["id"]: {**known.get(row["id"], {}), **row} for row in companies})
+    research = payload.get("research", [])
+    if not isinstance(research, list) or len(research) > int(config["deep_read_per_source"]):
+        raise ValueError("Browser deep reads must not exceed the per-source limit of 20")
+    results = []
+    for row in research:
+        existing_company = known.get(row.get("entry_id"))
+        if not existing_company or existing_company.get("source") != source:
+            raise ValueError("Browser research requires a known company entry_id from this source")
+        company = existing_company
+        observed = _time(row.get("observed_at"))
+        if not observed or observed > captured:
+            raise ValueError("Browser research requires an actual observation time")
+        prior_observation = _time(company.get("research_observed_at"))
+        if prior_observation and observed < prior_observation:
+            raise ValueError("Older browser research cannot replace newer company evidence")
+        official_pages = _browser_pages(row.get("pages", []), observed)
+        page_urls = {job_url(page["url"]) for page in official_pages
+                     if page["text_kind"] == "RENDERED_TEXT"}
+        jobs = []
+        for item in row.get("jobs", []):
+            url = job_url(public_url(str(item.get("url", ""))))
+            kind = item.get("evidence_kind")
+            if (url not in page_urls or not str(item.get("title", "")).strip()
+                    or not str(item.get("description", "")).strip()
+                    or kind not in {"OFFICIAL_EMPLOYER", "PLATFORM_LISTING"}):
+                raise ValueError("A job needs a captured JD page and explicit evidence kind")
+            if (kind == "OFFICIAL_EMPLOYER"
+                    and not _official_job_chain(company, official_pages, url)):
+                raise ValueError("Official JD needs a visible link chain from the employer website")
+            jobs.append({key: item[key] for key in (
+                "url", "title", "description", "location", "posted_at", "employment_type",
+                "salary", "evidence_kind", "board", "provider",
+            ) if key in item} | {"capture_method": "iab", "browser": browser})
+        boards = row.get("boards", [])
+        for board in boards:
+            if board.get("complete") is True and (
+                board.get("render_complete") is not True or board.get("has_more") is not False
+                or board.get("unfiltered") is not True
+                or job_url(str(board.get("url", ""))) not in page_urls
+            ):
+                raise ValueError("Closing jobs requires an exhausted, unfiltered browser board")
+        result = {"company": company, "observed_at": row["observed_at"], "browser": browser,
+                  "pages": official_pages, "jobs": jobs, "boards": boards,
+                  "errors": list(row.get("errors", []))}
+        identify_jobs(result)
+        results.append(result)
+    round_id = str(payload.get("round_id") or captured.astimezone(
+        ZoneInfo(config["timezone"])).date().isoformat())
+    earlier = [row for row in cast(list[Row], store.list(SCAN + "imports"))
+               if row.get("source") == source and row.get("round_id") == round_id]
+    attempted = {key for row in earlier for key in row.get("research_entry_ids", [])}
+    read_pages = {key for row in earlier for key in row.get("research_success_ids", [])}
+    attempted.update(row["company"]["id"] for row in results)
+    read_pages.update(row["company"]["id"] for row in results if row["pages"])
+    if len(attempted) > int(config["deep_read_per_source"]):
+        raise ValueError("Chunked browser captures must also respect the 20-company round limit")
+    news = []
+    for row in payload.get("news", []):
+        if not str(row.get("title", "")).strip():
+            raise ValueError("Browser news requires a visible title")
+        link = public_url(str(row.get("url", "")))
+        news.append({
+            "id": source + ":" + stable_hash(link)[:24], "source": source, "url": link,
+            **{key: row.get(key) for key in (
+                "title", "summary", "published_at_raw", "published_timezone")},
+            "observed_at": payload["captured_at"], "capture_method": "iab", "browser": browser,
+            "coverage": coverage,
+        })
+    if not success and (companies or results or news):
+        raise ValueError("Failed / blocked browser attempts cannot assert new source data")
+    counts = {"inserted": 0, "changed": 0, "new_jobs": 0, "changed_jobs": 0, "new_news": 0}
+    with store.transaction():
+        sync_sources(store, config)
+        if companies:
+            directory = {"schema_version": 1, "source": source,
+                         "capture_method": "iab",
+                         "captured_at": payload["captured_at"], "coverage": coverage,
+                         "companies": [{key: value for key, value in row.items()
+                                        if key not in {"id", "source"}} for row in companies]}
+            imported = ingest_directory(store, directory, atomic=False)
+            counts.update({key: imported[key] for key in ("inserted", "changed")})
+        for result in results:
+            entry = store.get(SCAN + "entries", result["company"]["id"])
+            result["company"] = _without_recorded(entry or result["company"])
+            if result["pages"]:
+                totals = save_research(store, result, atomic=False)
+                for key in ("new_jobs", "changed_jobs"):
+                    counts[key] += totals[key]
+            else:
+                store.upsert(SCAN + "entries", result["company"]["id"], {
+                    **result["company"], "last_attempt_at": result["observed_at"],
+                    "research_status": "UNAVAILABLE", "research_errors": result["errors"],
+                }, "WORKBENCH_BROWSER_RESEARCH_FAILED")
+        for row in news:
+            old = store.get(SCAN + "news", row["id"])
+            counts["new_news"] += old is None
+            row["first_seen_at"] = old["first_seen_at"] if old else row["observed_at"]
+            store.upsert(SCAN + "news", row["id"], row, "WORKBENCH_BROWSER_NEWS_OBSERVED")
+        health = _without_recorded(store.get(SCAN + "sources", source) or health)
+        health.update(
+            status=status, checked_at=payload["captured_at"],
+            browser_checked_at=payload["captured_at"], capture_method="iab", browser=browser,
+            browser_state=browser["login_state"], coverage=coverage,
+            coverage_complete=coverage.get("complete") is True,
+            browser_digest=digest, visible_count=coverage.get("visible_total"),
+            round_id=round_id, deep_read_attempted=len(attempted),
+            deep_read_with_pages=len(read_pages),
+            directory_count=sum(row["source"] == source
+                                for row in store.list(SCAN + "entries")),
+            browser_company_count=len(companies),
+            research_pending=sum(row.get("capture_method") != "iab"
+                                 or row.get("researched_hash") != row.get("source_hash")
+                                 for row in store.list(SCAN + "entries")
+                                 if row["source"] == source),
+            message=str(payload.get("message") or coverage["scope"]),
+        )
+        if success:
+            health.update(browser_last_success_at=payload["captured_at"],
+                          last_success_at=payload["captured_at"])
+        store.upsert(SCAN + "sources", source, health, "WORKBENCH_BROWSER_ATTEMPT_OBSERVED")
+        receipt = {"id": receipt_id, "source": source, "digest": digest, "status": status,
+                   "captured_at": payload["captured_at"], "capture_method": "iab",
+                   "browser": browser, "coverage": coverage, "round_id": round_id,
+                   "research_entry_ids": [row["company"]["id"] for row in results],
+                   "research_success_ids": [row["company"]["id"] for row in results
+                                            if row["pages"]],
+                   **counts, "idempotent_replay": False}
+        store.upsert(SCAN + "imports", receipt_id, receipt, "WORKBENCH_BROWSER_CAPTURE_IMPORTED")
+    _write_json(settings.home / "output/workbench/browser" / source / f"{digest}.json", payload)
+    return receipt
+
+
+def save_research(store: LocalDataStore, result: Row, *, atomic: bool = True) -> Row:
     company = result["company"]
     observed = result["observed_at"]
     old = _without_recorded(store.get(SCAN + "entries", company["id"]) or {})
@@ -485,10 +753,12 @@ def save_research(store: LocalDataStore, result: Row) -> Row:
         "pages": result["pages"],
         "boards": list(boards.values()),
         "research_status": "PARTIAL" if result["errors"] else "REVIEW_READY",
+        **({"browser": result["browser"], "capture_method": "iab"}
+           if result.get("browser") else {}),
     }
     inserted = changed = 0
     by_board: dict[str, set[str]] = {}
-    with store.transaction():
+    with store.transaction() if atomic else nullcontext():
         for row in result["jobs"]:
             item = dict(row)
             item["url"] = job_url(item["url"])
@@ -585,6 +855,7 @@ def review_candidates(store: LocalDataStore, profile: Row) -> list[Row]:
             "official_evidence": "既有官方 ATS 采集",
             "legacy_job_id": item["id"],
             "posted_at": item.get("posted_at"),
+            "employment_type": item.get("employment_type"),
         }
     entries = {item["id"]: item for item in cast(list[Row], store.list(SCAN + "entries"))}
     for item in cast(list[Row], store.list(SCAN + "jobs")):
@@ -600,7 +871,8 @@ def review_candidates(store: LocalDataStore, profile: Row) -> list[Row]:
         combined[url] = {
             **old,
             "id": "role:" + stable_hash(url)[:24],
-            "kind": "CURRENT_JOB",
+            "kind": "PLATFORM_JOB" if item.get("evidence_kind") == "PLATFORM_LISTING"
+            else "CURRENT_JOB",
             "company": item["company"],
             "title": item["title"],
             "description": item["description"],
@@ -610,13 +882,18 @@ def review_candidates(store: LocalDataStore, profile: Row) -> list[Row]:
             "source_ids": sorted(
                 set(old.get("source_ids", []) + item.get("source_ids", [item["source"]]))
             ),
-            "official_evidence": "渠道官网回链到雇主岗位／官方 ATS",
+            "official_evidence": "平台岗位正文，雇主官方 JD 待核实"
+            if item.get("evidence_kind") == "PLATFORM_LISTING"
+            else "渠道官网回链到雇主岗位／官方 ATS",
+            "capture_method": item.get("capture_method", "HISTORICAL_HTTP"),
+            "browser": item.get("browser"),
             "company_evidence": {
                 "directory": entry.get("description"),
                 "official_pages": entry.get("pages", []),
                 "stage": entry.get("stage"),
             },
             "posted_at": item.get("posted_at"),
+            "employment_type": item.get("employment_type"),
         }
     rows = list(combined.values())
     research_domains: set[str] = set()
@@ -650,6 +927,8 @@ def review_candidates(store: LocalDataStore, profile: Row) -> list[Row]:
                     }
                 ),
                 "observed_at": item.get("research_observed_at"),
+                "capture_method": item.get("capture_method", "HISTORICAL_HTTP"),
+                "browser": item.get("browser"),
                 "company_evidence": {
                     "directory": item.get("description"),
                     "official_pages": item.get("pages", []),
@@ -722,45 +1001,50 @@ def _write_json(path: Path, payload: Any) -> None:
     temporary.replace(path)
 
 
-def refresh_known_boards(store: LocalDataStore, web: PublicWeb, day: str) -> list[Row]:
-    """Job changes must be detected even when a VC directory entry has not changed."""
-    receipts = []
-    seen: set[str] = set()
-    for entry in cast(list[Row], store.list(SCAN + "entries")):
-        if not entry.get("website"):
-            continue
-        for board in entry.get("boards", []):
-            identifier = board["id"]
-            if identifier in seen:
-                continue
-            seen.add(identifier)
-            observed = _time(board.get("observed_at"))
-            if (
-                board.get("complete") is True
-                and observed
-                and observed.astimezone(ZoneInfo("America/Chicago")).date().isoformat() == day
-            ):
-                continue
-            provider, board_id = identifier.split(":", 1)
-            result = {
-                "company": entry,
-                "observed_at": now(),
-                "pages": entry.get("pages", []),
-                "jobs": [],
-                "boards": [],
-                "errors": [],
-            }
-            try:
-                jobs, coverage = read_board(web, provider, board_id)
-                coverage["observed_at"] = result["observed_at"]
-                result["jobs"], result["boards"] = jobs, [coverage]
-                identify_jobs(result)
-                receipts.append(
-                    {"board": identifier, **save_research(store, result), "status": "CAPTURED"}
-                )
-            except (httpx.HTTPError, ValueError, PermissionError, KeyError, TypeError) as error:
-                receipts.append({"board": identifier, "status": "UNAVAILABLE", "error": str(error)})
-    return receipts
+def browser_worklist(store: LocalDataStore, config: Row, day: str) -> Row:
+    """Queue actual IAB visits; generating a queue never claims a page was visited."""
+    sources = []
+    for spec in config["sources"]:
+        health = store.get(SCAN + "sources", spec["id"]) or {}
+        checked = _time(health.get("browser_checked_at"))
+        visited_today = bool(checked and checked.astimezone(ZoneInfo(config["timezone"]))
+                             .date().isoformat() == day)
+        entries = [row for row in store.list(SCAN + "entries") if row["source"] == spec["id"]]
+        entries.sort(key=lambda row: (
+            row.get("capture_method") == "iab",
+            -_recall_priority(row), str(row.get("research_observed_at") or ""), row["id"],
+        ))
+        pending = []
+        for row in entries:
+            observed = _time(row.get("research_observed_at"))
+            if (row.get("capture_method") != "iab" or not observed
+                    or observed.astimezone(ZoneInfo(config["timezone"])).date().isoformat() != day):
+                pending.append(row)
+        sources.append({
+            "id": spec["id"], "name": spec["name"], "url": spec.get("url"), "browser": "iab",
+            "visited_today": visited_today,
+            "status": health.get("status", "BROWSER_SESSION_REQUIRED"),
+            "browser_state": health.get("browser_state", "UNKNOWN"),
+            "browser_checked_at": health.get("browser_checked_at"),
+            "user_deferred": bool(spec.get("user_deferred")),
+            "deferred_reason": spec.get("deferred_reason"),
+            "pending_companies": len(pending), "deep_read_limit": config["deep_read_per_source"],
+            "companies": [{key: row.get(key) for key in (
+                "id", "name", "detail_url", "website", "description", "boards",
+            )} for row in pending[:int(config["deep_read_per_source"])]],
+            "instructions": spec["deferred_reason"] if spec.get("user_deferred") else
+                            "从实际页面读取新增／变化线索；使用可见筛选、分页、公司弹窗与官网回链。"
+                            "同一轮含既有待复查岗位，深读合计最多20家公司。需要登录或验证及时交接。",
+        })
+    return {"schema_version": 2, "date": day, "timezone": config["timezone"],
+            "capture_method": "iab", "sources": sources}
+
+
+def _capture_revision(store: LocalDataStore, profile: Row, pool: list[Row]) -> str:
+    return stable_hash({
+        "profile": profile["digest"], "candidates": pool,
+        "sources": [_without_recorded(row) for row in store.list(SCAN + "sources")],
+    })
 
 
 def scan_workbench(
@@ -770,186 +1054,39 @@ def scan_workbench(
     source: str | None = None,
     prepare_only: bool = False,
 ) -> Row:
+    """Prepare browser work and a review packet from saved evidence. No network fallback."""
     config = load_config(settings.home)
-    extra_source = None
+    store = LocalDataStore(settings.database_path)
+    sync_sources(store, config)
     if source and source not in {spec["id"] for spec in config["sources"]}:
-        registered = LocalDataStore(settings.database_path).get(SCAN + "sources", source)
+        registered = store.get(SCAN + "sources", source)
         if not registered or registered.get("mode") == "restricted":
             raise ValueError("Unknown or restricted discovery source")
-        extra_source = {**registered, "mode": "browser_snapshot"}
-    store = LocalDataStore(settings.database_path)
+        config["sources"].append(registered)
+    profile = profile_snapshot(store, settings.home, config)
     day = datetime.now(ZoneInfo(config["timezone"])).date().isoformat()
     latest = store.get(SCAN + "runs", day)
-    if latest and not force and not source and not prepare_only:
+    revision = _capture_revision(store, profile, review_candidates(store, profile))
+    if (latest and latest.get("capture_method") == "iab"
+            and latest.get("capture_revision") == revision
+            and not force and not source and not prepare_only):
+        _write_json(settings.home / "output/workbench" / day / "browser-worklist.json",
+                    browser_worklist(store, config, day))
         return {**latest, "reused": True}
-    sync_sources(store, config)
-    if extra_source:
-        config["sources"].append(extra_source)
-    profile = profile_snapshot(store, settings.home, config)
     output = settings.home / "output/workbench" / day
     output.mkdir(parents=True, exist_ok=True)
     if latest:
         archive = output / "attempts" / str(latest["input_digest"])[:16]
         archive.mkdir(parents=True, exist_ok=True)
-        for name in (
-            "scan.json",
-            "review-input.json",
-            "all-candidates.json",
-            "profile.json",
-            "brief.json",
-            "brief.md",
-            "known-board-refresh.json",
-        ):
+        for name in ("scan.json", "review-input.json", "all-candidates.json", "profile.json",
+                     "brief.json", "brief.md", "known-board-refresh.json", "browser-worklist.json"):
             if (output / name).is_file() and not (archive / name).exists():
                 shutil.copy2(output / name, archive / name)
-    if prepare_only:
-        return prepare_review(
-            settings,
-            store,
-            config,
-            profile,
-            cast(Row, latest.get("counts", {})) if latest else {},
-            [],
-        )
-    web = PublicWeb()
-    counts: Row = {"new_companies": 0, "changed_companies": 0, "new_jobs": 0, "changed_jobs": 0}
-    selected_source = source
-    try:
-        for spec in config["sources"]:
-            if selected_source and spec["id"] != selected_source:
-                continue
-            source = spec["id"]
-            health = _without_recorded(store.get(SCAN + "sources", source) or {})
-            if spec["mode"] == "restricted":
-                continue
-            try:
-                if spec["mode"] == "official_free_api":
-                    response = web._request(
-                        "POST",
-                        "https://www.itjuzi.com/api/telegraph/get_list",
-                        data={"date_scope": "today", "page": 1},
-                        headers={"User-Agent": "itjuzi-bulletin-skill/2.0"},
-                    )
-                    payload = response.json()
-                    if payload.get("status") != "success" or not isinstance(
-                        payload.get("data"), dict
-                    ):
-                        raise ValueError(
-                            "Official ITjuzi API did not return a successful data object"
-                        )
-                    data = payload["data"]
-                    counts["new_news"] = counts.get("new_news", 0) + ingest_news(store, data, now())
-                    _write_json(
-                        output / "itjuzi-free.json", {"observed_at": now(), "response": payload}
-                    )
-                    health.update(
-                        status="PARTIAL_CAPTURE"
-                        if data.get("items")
-                        else "EMPTY_WINDOW_UNVERIFIED",
-                        checked_at=now(),
-                        coverage_complete=False,
-                        api_items=data.get("items_returned"),
-                        api_total=data.get("total"),
-                        date_scope=data.get("date_scope"),
-                        message="官方免费今日摘要窗口；不代表网页／历史全量。空结果不删除旧线索。",
-                    )
-                    store.upsert(SCAN + "sources", source, health, "WORKBENCH_NEWS_WINDOW_OBSERVED")
-                    continue
-                if spec["mode"] == "browser_snapshot":
-                    receipt = {"inserted": 0, "changed": 0}
-                else:
-                    payload = fetch_directory(web, spec)
-                    _write_json(output / f"{source}-directory.json", payload)
-                    receipt = ingest_directory(store, payload)
-                counts["new_companies"] += receipt["inserted"]
-                counts["changed_companies"] += receipt["changed"]
-                queue = [
-                    item
-                    for item in cast(list[Row], store.list(SCAN + "entries"))
-                    if item["source"] == source
-                ]
-                queue.sort(
-                    key=lambda item: (
-                        item.get("researched_hash") == item.get("source_hash"),
-                        str(item.get("research_observed_at") or ""),
-                        -_recall_priority(item),
-                        item["id"],
-                    )
-                )
-                selected = queue[: int(config["deep_read_per_source"])]
-                successes = 0
-                with ThreadPoolExecutor(max_workers=2) as pool:
-                    pending_reads = {
-                        pool.submit(read_employer, web, item): item for item in selected
-                    }
-                    for index, future in enumerate(as_completed(pending_reads), 1):
-                        item = pending_reads[future]
-                        print(
-                            f"{spec['name']}: 深读 {index}/{len(selected)} {item['name']}",
-                            flush=True,
-                        )
-                        try:
-                            result = future.result()
-                            for board in result["boards"]:
-                                board["observed_at"] = result["observed_at"]
-                            job_counts = save_research(store, result)
-                            counts["new_jobs"] += job_counts["new_jobs"]
-                            counts["changed_jobs"] += job_counts["changed_jobs"]
-                            successes += bool(result["pages"])
-                            _write_json(
-                                output / "research" / f"{stable_hash(item['id'])[:20]}.json", result
-                            )
-                        except (
-                            httpx.HTTPError,
-                            ValueError,
-                            PermissionError,
-                            KeyError,
-                            TypeError,
-                        ) as error:
-                            store.upsert(
-                                SCAN + "entries",
-                                item["id"],
-                                {
-                                    **_without_recorded(item),
-                                    "last_attempt_at": now(),
-                                    "research_status": "UNAVAILABLE",
-                                    "research_errors": [f"{type(error).__name__}: {error}"],
-                                },
-                                "WORKBENCH_RESEARCH_FAILED",
-                            )
-                updated = _without_recorded(store.get(SCAN + "sources", source) or {})
-                pending = sum(
-                    item.get("researched_hash") != item.get("source_hash")
-                    for item in store.list(SCAN + "entries")
-                    if item["source"] == source
-                )
-                updated.update(
-                    status="PARTIAL_RESEARCH" if pending else "RESEARCH_CAPTURED",
-                    checked_at=now(),
-                    deep_read_attempted=len(selected),
-                    deep_read_with_pages=successes,
-                    deep_read_limit=config["deep_read_per_source"],
-                    research_pending=pending,
-                    message="名录覆盖与公司／岗位深入研读分别计数；最终推荐等待 Codex 语义审阅。",
-                )
-                store.upsert(SCAN + "sources", source, updated, "WORKBENCH_SOURCE_RESEARCH_UPDATED")
-            except (httpx.HTTPError, ValueError, PermissionError, KeyError, TypeError) as error:
-                health = _without_recorded(store.get(SCAN + "sources", source) or health)
-                health.update(
-                    status="RESTRICTED" if isinstance(error, PermissionError) else "UNAVAILABLE",
-                    checked_at=now(),
-                    message=f"{type(error).__name__}: {error}",
-                    coverage_complete=False,
-                )
-                store.upsert(SCAN + "sources", source, health, "WORKBENCH_SOURCE_FAILED")
-        board_receipts = refresh_known_boards(store, web, day)
-        _write_json(output / "known-board-refresh.json", board_receipts)
-        for receipt in board_receipts:
-            counts["new_jobs"] += receipt.get("new_jobs", 0)
-            counts["changed_jobs"] += receipt.get("changed_jobs", 0)
-    finally:
-        web.close()
-    return prepare_review(settings, store, config, profile, counts, board_receipts)
+    worklist = browser_worklist(store, config, day)
+    if source:
+        worklist["sources"] = [row for row in worklist["sources"] if row["id"] == source]
+    _write_json(output / "browser-worklist.json", worklist)
+    return prepare_review(settings, store, config, profile, {}, [])
 
 
 def prepare_review(
@@ -986,6 +1123,11 @@ def prepare_review(
         ),
         "changed_jobs": sum(today(row.get("changed_at")) for row in jobs),
         "new_news": sum(today(row.get("first_seen_at")) for row in store.list(SCAN + "news")),
+        "browser_company_reviews": sum(row.get("capture_method") == "iab"
+                                       and today(row.get("research_observed_at"))
+                                       for row in entries),
+        "browser_jobs_observed": sum(row.get("capture_method") == "iab"
+                                     and today(row.get("observed_at")) for row in jobs),
     }
     # Keep diverse roles in the review packet; the complete pool remains a local artifact.
     per_company: Counter[str] = Counter()
@@ -1014,6 +1156,8 @@ def prepare_review(
         "counts": daily_counts,
         "attempt_counts": counts,
         "board_refresh": board_receipts,
+        "capture_method": "iab",
+        "browser_worklist": str(output / "browser-worklist.json"),
         "news": store.list(SCAN + "news"),
         "recommendation_limit": config["recommendation_limit"],
         "review_instructions": "综合新目录、旧 Workbench 和官方岗位。"
@@ -1038,6 +1182,8 @@ def prepare_review(
         "all_candidate_count": len(all_candidates),
         "shortlist_count": len(shortlist),
         "reused": False,
+        "capture_method": "iab",
+        "capture_revision": _capture_revision(store, profile, all_candidates),
     }
     store.upsert(SCAN + "runs", day, run, "WORKBENCH_SCAN_PREPARED")
     _write_json(output / "scan.json", run)
@@ -1075,6 +1221,14 @@ def publish_brief(settings: Settings, review_path: Path) -> Row:
         row = known[identifier]
         if item.get("track") not in {"FULL_TIME", "COFOUNDER", "AI_PARTNERSHIP", "RESEARCH"}:
             raise ValueError("Unknown opportunity track")
+        if item["track"] == "FULL_TIME" and row["kind"] != "CURRENT_JOB":
+            raise ValueError("Full-time recommendations require an observed employer official JD")
+        employment = str(row.get("employment_type", "")).casefold()
+        if item["track"] == "FULL_TIME" and (re.search(
+            r"\bintern(?:ship)?\b|实习|\bpart[- ]time\b",
+            str(row.get("title", "")) + " " + employment, re.I,
+        ) or employment in {"contract", "contractor", "temporary"}):
+            raise ValueError("Internship / part-time / contract roles cannot be labeled full-time")
         if item["track"] == "COFOUNDER" and (
             not item.get("cofounder_evidence") or "COFOUNDER" not in row.get("tracks", [])
         ):

@@ -605,12 +605,31 @@ def _daily_scan(store: LocalDataStore) -> None:
             st.download_button("下载本次机会简报", path.read_text(), f"career-brief-{report['date']}.md", "text/markdown")
     st.subheader("渠道覆盖与新鲜度")
     rows = store.list(SCAN + "sources")
-    st.dataframe([{"渠道": row.get("name"), "状态": row.get("status"),
-                   "名录记录": row.get("directory_count"), "深读尝试": row.get("deep_read_attempted"),
+    st.dataframe([{"渠道": row.get("name"),
+                   "状态": "用户暂略过" if row.get("user_deferred") else row.get("status"),
+                   "采集方式": row.get("capture_method") or row.get("mode"),
+                   "登录状态": row.get("browser_state", "UNKNOWN"),
+                   "最近一次可见数量": row.get("visible_count"),
+                   "历史名录记录": row.get("directory_count"),
+                   "深读尝试": row.get("deep_read_attempted"),
                    "读到公司页面": row.get("deep_read_with_pages"),
-                   "待深读": row.get("research_pending"), "最近成功采集": _scan_time(row.get("last_success_at")),
-                   "说明": row.get("message") or row.get("policy_note")}
+                   "浏览器最近尝试": _scan_time(row.get("browser_checked_at")),
+                   "浏览器最近读到内容": _scan_time(row.get("browser_last_success_at")),
+                   "说明": row.get("deferred_reason") if row.get("user_deferred") else
+                           row.get("message") or row.get("policy_note")}
                   for row in rows], hide_index=True, width="stretch")
+    with st.expander("查看浏览器登录、分页与覆盖回执"):
+        for row in rows:
+            if row.get("capture_method") == "iab":
+                st.write(row.get("name"))
+                st.json({"browser": row.get("browser"), "coverage": row.get("coverage"),
+                         "last_attempt": row.get("browser_checked_at"),
+                         "last_success": row.get("browser_last_success_at"),
+                         "capture_digest": row.get("browser_digest"),
+                         "本轮分批回执": [item for item in store.list(SCAN + "imports")
+                                          if item.get("source") == row["id"]
+                                          and item.get("round_id") == row.get("round_id")]},
+                        expanded=False)
     with st.expander("原 H-1B 来源状态与历史证据边界"):
         st.write("H1BData / MyVisaJobs 的 LCA 记录是历史背景；当前岗位以雇主官方页面为准。")
         st.dataframe([{"来源": row.get("source"), "状态": row.get("status"),

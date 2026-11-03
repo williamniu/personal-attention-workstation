@@ -14,14 +14,15 @@ from hcis.sources.discovery import stable_hash
 from hcis.workbench_scan import (
     SCAN,
     direction_matches,
+    ingest_browser_capture,
     ingest_directory,
     ingest_news,
     ingest_workbench_directory,
     publish_brief,
-    refresh_known_boards,
     review_candidates,
     save_research,
     scan_workbench,
+    sync_sources,
 )
 
 
@@ -40,6 +41,33 @@ def snapshot(source: str = "directory", captured: str | None = None) -> dict:
         ],
         "coverage": {"complete": True, "scope": "public list"},
     }
+
+
+def browser_snapshot() -> dict:
+    data = snapshot()
+    data.update(
+        schema_version=2, status="PARTIAL_CAPTURE",
+        browser={"type": "iab", "login_state": "NOT_REQUIRED"},
+        coverage={"complete": False, "render_complete": True, "has_more": True,
+                  "scope": "First visible page", "visible_total": 1},
+        pages=[{"url": "https://vc.example/", "title": "Portfolio",
+                "text": "Builder — AI agent tools", "observed_at": data["captured_at"]}],
+    )
+    entry = {**data["companies"][0], "source": data["source"],
+             "id": data["source"] + ":" + stable_hash(
+                 data["companies"][0]["detail_url"] + "|builder")[:20]}
+    result = research(entry)
+    result["observed_at"] = data["captured_at"]
+    result["entry_id"] = entry["id"]
+    result.pop("company")
+    result["pages"][0].update(observed_at=data["captured_at"],
+                              links=[{"url": result["jobs"][0]["url"], "label": "Design Engineer"}])
+    result["pages"].append({"url": result["jobs"][0]["url"], "text": "Full rendered JD",
+                            "observed_at": data["captured_at"]})
+    result["boards"] = []
+    result["jobs"][0]["evidence_kind"] = "OFFICIAL_EMPLOYER"
+    data["research"] = [result]
+    return data
 
 
 def research(
@@ -187,6 +215,18 @@ def test_responsibilities_can_match_without_a_fixed_title_allowlist() -> None:
     )
 
 
+def test_browser_verified_name_keeps_the_existing_unique_detail_identity(tmp_path: Path) -> None:
+    store = LocalDataStore(tmp_path / "state.sqlite3")
+    data = snapshot("mindworks")
+    data["companies"][0]["name"] = "abc fintech"
+    ingest_directory(store, data)
+    identifier = store.list(SCAN + "entries")[0]["id"]
+    data["captured_at"] = datetime.now(UTC).isoformat()
+    data["companies"][0]["name"] = "阿博茨科技"
+    assert ingest_directory(store, data)["inserted"] == 0
+    assert store.list(SCAN + "entries")[0]["id"] == identifier
+
+
 def test_news_empty_window_preserves_raw_dates_and_existing_items(tmp_path: Path) -> None:
     store = LocalDataStore(tmp_path / "state.sqlite3")
     observed = datetime.now(UTC).isoformat()
@@ -208,33 +248,6 @@ def test_news_empty_window_preserves_raw_dates_and_existing_items(tmp_path: Path
     assert row["published_timezone"] is None and row["observed_at"] == observed
 
 
-def test_failed_board_is_retried_even_if_observed_today(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from hcis.sources.discovery import PublicWeb
-
-    store = LocalDataStore(tmp_path / "state.sqlite3")
-    ingest_directory(store, snapshot())
-    entry = store.list(SCAN + "entries")[0]
-    entry["boards"] = [
-        {"id": "ashby:builder", "complete": False, "observed_at": datetime.now(UTC).isoformat()}
-    ]
-    store.upsert(SCAN + "entries", entry["id"], entry, "FAILED_READ")
-    monkeypatch.setattr(
-        "hcis.workbench_scan.read_board", lambda *_: ([], {"id": "ashby:builder", "complete": True})
-    )
-    from zoneinfo import ZoneInfo
-
-    day = datetime.now(ZoneInfo("America/Chicago")).date().isoformat()
-    web = PublicWeb()
-    assert refresh_known_boards(store, web, day)[0]["status"] == "CAPTURED"
-    assert refresh_known_boards(store, web, day) == []
-    web.close()
-    assert "RL / 研究 / 评估" in direction_matches(
-        "Member of Technical Staff", "post-training evaluation"
-    )
-
 
 def prepare(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Settings, dict, dict]:
     settings = Settings(home=tmp_path)
@@ -248,7 +261,7 @@ def prepare(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Settings, 
                 "id": "directory",
                 "name": "Directory",
                 "url": "https://vc.example/",
-                "mode": "public_directory",
+                "mode": "browser_session",
                 "reason": "public",
                 "parser": "crv",
             }
@@ -257,11 +270,14 @@ def prepare(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Settings, 
     folder = tmp_path / "config/sources"
     folder.mkdir(parents=True)
     (folder / "discovery.yaml").write_text(yaml.safe_dump(config))
-    monkeypatch.setattr("hcis.workbench_scan.fetch_directory", lambda _web, _spec: snapshot())
-    monkeypatch.setattr("hcis.workbench_scan.read_employer", lambda _web, entry: research(entry))
     store = LocalDataStore(settings.database_path)
     protected = {"id": "human", "favorite": True, "notes": "User's progress"}
     store.upsert("opportunity_states", "human", protected, "BASELINE")
+    sync_sources(store, config)
+    capture = browser_snapshot()
+    path = tmp_path / "capture.json"
+    path.write_text(json.dumps(capture))
+    ingest_browser_capture(settings, path)
     run = scan_workbench(settings)
     packet = json.loads(Path(run["review_input"]).read_text())
     candidate = next(row for row in packet["candidates"] if row["kind"] == "CURRENT_JOB")
@@ -396,3 +412,227 @@ def test_review_rejects_unobserved_evidence_and_unbounded_or_invented_recommenda
     with pytest.raises(ValueError):
         publish_brief(settings, path)
     assert LocalDataStore(settings.database_path).list(SCAN + "briefs") == []
+
+
+@pytest.mark.parametrize("options", [{}, {"force": True}, {"source": "directory"},
+                                     {"prepare_only": True}])
+def test_every_scan_mode_uses_saved_browser_evidence_without_network(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, options: dict,
+) -> None:
+    def forbidden(*args: object, **kwargs: object) -> None:
+        raise AssertionError("No HTTP / API fallback is allowed in the browser scan")
+
+    monkeypatch.setattr("hcis.workbench_scan.PublicWeb", forbidden)
+    monkeypatch.setattr("httpx.Client.request", forbidden)
+    settings, _, _ = prepare(tmp_path, monkeypatch)
+    run = scan_workbench(settings, **options)
+    worklist = json.loads((Path(run["review_input"]).parent / "browser-worklist.json").read_text())
+    assert worklist["capture_method"] == "iab"
+    assert worklist["sources"][0]["visited_today"] is True
+
+
+def test_all_eight_configured_entrances_require_browser_capture() -> None:
+    from hcis.workbench_scan import load_config
+
+    config = load_config(Path(__file__).resolve().parents[2])
+    assert len(config["sources"]) == 8
+    assert {row["mode"] for row in config["sources"]} == {"browser_session"}
+    assert config["deep_read_per_source"] == 20 and config["recommendation_limit"] == 10
+    assert config["sources"][4]["url"].endswith("?category=featured")
+    assert next(row for row in config["sources"] if row["id"] == "itjuzi")["user_deferred"] is True
+
+
+@pytest.mark.parametrize("failure", ["chrome", "future", "no_login_proof", "unfinished",
+                                     "too_many", "no_jd", "unlinked_jd", "wrong_source",
+                                     "unverified_board", "summary_jd", "stale_research"])
+def test_invalid_browser_capture_has_no_partial_database_writes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str,
+) -> None:
+    settings, _, _ = prepare(tmp_path, monkeypatch)
+    data = browser_snapshot()
+    if failure == "chrome":
+        data["browser"]["type"] = "chrome"
+    elif failure == "future":
+        data["captured_at"] = (datetime.now(UTC) + timedelta(days=1)).isoformat()
+    elif failure == "no_login_proof":
+        data["browser"]["login_state"] = "SIGNED_IN"
+    elif failure == "unfinished":
+        data["coverage"]["complete"] = True
+        data["status"] = "CAPTURED"
+    elif failure == "too_many":
+        data["research"] *= 21
+    elif failure == "no_jd":
+        data["research"][0]["pages"].pop()
+    elif failure == "unlinked_jd":
+        data["research"][0]["pages"][0]["links"] = []
+    elif failure == "wrong_source":
+        data["source"] = "not-registered"
+    elif failure == "summary_jd":
+        data["research"][0]["pages"][-1]["text_kind"] = "BROWSER_REVIEW_SUMMARY"
+    elif failure == "stale_research":
+        data["research"][0]["observed_at"] = (datetime.now(UTC)-timedelta(days=1)).isoformat()
+    else:
+        data["research"][0]["boards"] = [{"id": "ashby:builder", "complete": True}]
+    from hcis.workbench import export_workspace
+
+    store = LocalDataStore(settings.database_path)
+    before = json.loads(export_workspace(store))["collections"]
+    path = tmp_path / "invalid-browser.json"
+    path.write_text(json.dumps(data))
+    with pytest.raises(ValueError):
+        ingest_browser_capture(settings, path)
+    assert json.loads(export_workspace(store))["collections"] == before
+
+
+def test_browser_replay_and_blank_attempt_preserve_success_and_old_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings, _, _ = prepare(tmp_path, monkeypatch)
+    store = LocalDataStore(settings.database_path)
+    path = tmp_path / "capture.json"
+    assert ingest_browser_capture(settings, path)["idempotent_replay"] is True
+    before = store.list(SCAN + "jobs")
+    health = store.get(SCAN + "sources", "directory")
+    data = browser_snapshot()
+    data.update(status="BLANK_PAGE", companies=[], research=[], pages=[])
+    data["browser"]["login_state"] = "UNKNOWN"
+    path.write_text(json.dumps(data))
+    ingest_browser_capture(settings, path)
+    after = store.get(SCAN + "sources", "directory")
+    assert after["browser_last_success_at"] == health["browser_last_success_at"]
+    assert after["browser_checked_at"] == data["captured_at"] and after["status"] == "BLANK_PAGE"
+    assert store.list(SCAN + "jobs") == before
+    data["captured_at"] = health["browser_checked_at"]
+    path.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match="Older"):
+        ingest_browser_capture(settings, path)
+
+
+def test_browser_news_keeps_raw_dates_and_job_provenance_and_blocks_platform_full_time(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings, review, _ = prepare(tmp_path, monkeypatch)
+    data = browser_snapshot()
+    data["news"] = [{"title": "Builder funding", "url": "https://vc.example/news/1",
+                     "summary": "Visible funding item", "published_at_raw": "今天 08:00"}]
+    data["research"][0]["jobs"][0]["evidence_kind"] = "PLATFORM_LISTING"
+    path = tmp_path / "new-capture.json"
+    path.write_text(json.dumps(data))
+    assert ingest_browser_capture(settings, path)["new_news"] == 1
+    assert ingest_browser_capture(settings, path)["new_jobs"] == 0
+    assert ingest_browser_capture(settings, path)["new_news"] == 0
+    store = LocalDataStore(settings.database_path)
+    news = store.list(SCAN + "news")[0]
+    assert news["published_at_raw"] == "今天 08:00" and news["published_timezone"] is None
+    assert news["capture_method"] == "iab"
+    run = scan_workbench(settings)
+    packet = json.loads(Path(run["review_input"]).read_text())
+    role = next(row for row in packet["candidates"] if row["url"].endswith("/design"))
+    assert role["kind"] == "PLATFORM_JOB"
+    review["input_digest"] = packet["digest"]
+    path.write_text(json.dumps(review))
+    with pytest.raises(ValueError, match="official JD"):
+        publish_brief(settings, path)
+
+
+def test_old_http_capture_cannot_count_as_todays_browser_visit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings, _, _ = prepare(tmp_path, monkeypatch)
+    store = LocalDataStore(settings.database_path)
+    health = store.get(SCAN + "sources", "directory")
+    health.update(mode="public_directory", captured_at=datetime.now(UTC).isoformat())
+    for key in ("browser_checked_at", "browser_last_success_at", "browser_digest"):
+        health.pop(key, None)
+    store.upsert(SCAN + "sources", "directory", health, "OLD_HTTP_CAPTURE")
+    scan_workbench(settings, force=True)
+    assert store.get(SCAN + "sources", "directory")["status"] == "BROWSER_SESSION_REQUIRED"
+    worklists = list((tmp_path / "output/workbench").glob("*/browser-worklist.json"))
+    assert json.loads(worklists[0].read_text())["sources"][0]["visited_today"] is False
+    path = tmp_path / "old-directory.json"
+    path.write_text(json.dumps(snapshot()))
+    with pytest.raises(ValueError, match="IAB"):
+        ingest_workbench_directory(settings, path)
+
+
+def test_browser_batch_rolls_back_even_when_a_later_research_write_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings, _, _ = prepare(tmp_path, monkeypatch)
+    store = LocalDataStore(settings.database_path)
+    from hcis.workbench import export_workspace
+
+    before = json.loads(export_workspace(store))["collections"]
+    data = browser_snapshot()
+    data["companies"][0]["description"] = "Changed AI product description"
+    data["research"] *= 2
+    original = save_research
+    writes = 0
+
+    def fail_second(*args: object, **kwargs: object) -> dict:
+        nonlocal writes
+        writes += 1
+        if writes == 2:
+            raise ValueError("Simulated mid-batch write failure")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr("hcis.workbench_scan.save_research", fail_second)
+    path = tmp_path / "mid-batch.json"
+    path.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match="mid-batch"):
+        ingest_browser_capture(settings, path)
+    assert writes == 2
+    assert json.loads(export_workspace(store))["collections"] == before
+
+
+def test_chunking_cannot_reset_the_company_limit_for_a_browser_round(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import copy
+
+    settings, _, _ = prepare(tmp_path, monkeypatch)
+    data = browser_snapshot()
+    template = data["research"][0]
+    # One company was already read by prepare(); a second chunk adds 19, reaching 20.
+    data["companies"] = []
+    data["research"] = []
+    for index in range(20):
+        company = {"name": f"Builder {index}", "website": "https://builder.example/",
+                   "detail_url": f"https://vc.example/companies/builder-{index}"}
+        data["companies"].append(company)
+        result = copy.deepcopy(template)
+        result.update(entry_id="directory:" + stable_hash(
+            company["detail_url"] + "|" + company["name"].casefold())[:20], jobs=[])
+        data["research"].append(result)
+    last = data["research"].pop()
+    path = tmp_path / "chunk.json"
+    path.write_text(json.dumps(data))
+    ingest_browser_capture(settings, path)
+    data["captured_at"] = datetime.now(UTC).isoformat()
+    data["companies"] = []
+    data["research"] = [last]
+    path.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match="round limit"):
+        ingest_browser_capture(settings, path)
+
+
+@pytest.mark.parametrize("title,allowed", [("Smart Contract Engineer", True),
+                                         ("Applied Research Intern", False)])
+def test_full_time_checks_employment_without_a_narrow_job_title_allowlist(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, title: str, allowed: bool,
+) -> None:
+    settings, review, _ = prepare(tmp_path, monkeypatch)
+    data = browser_snapshot()
+    data["research"][0]["jobs"][0].update(title=title, employment_type="Full time")
+    path = tmp_path / "employment.json"
+    path.write_text(json.dumps(data))
+    ingest_browser_capture(settings, path)
+    run = scan_workbench(settings)
+    packet = json.loads(Path(run["review_input"]).read_text())
+    review["input_digest"] = packet["digest"]
+    path.write_text(json.dumps(review))
+    if allowed:
+        assert len(publish_brief(settings, path)["recommendations"]) == 1
+    else:
+        with pytest.raises(ValueError, match="Internship"):
+            publish_brief(settings, path)

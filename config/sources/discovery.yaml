@@ -1,4 +1,5 @@
-schema_version: 1
+schema_version: 2
+browser: iab
 profile_version: william-opportunities-2026-11-02
 timezone: America/Chicago
 deep_read_per_source: 20
@@ -7,53 +8,49 @@ sources:
   - id: yc-companies
     name: YC Companies
     url: https://www.ycombinator.com/companies
-    mode: restricted
+    mode: browser_session
     policy_url: https://www.ycombinator.com/legal#tou
-    reason: 条款限制 robots / scraping / data mining；保留用户提供线索后核验雇主官方来源。
+    reason: 内置浏览器实际列表、筛选与公司详情；登录状态和分页范围单独记录。网站声明不代替页面可读性测试。
   - id: yc
     name: YC Jobs
     url: https://www.ycombinator.com/jobs
-    mode: restricted
+    mode: browser_session
     policy_url: https://www.ycombinator.com/legal#tou
-    reason: 条款限制自动采集；公开页面可读不代表允许每日抓取。
+    reason: 内置浏览器读取岗位正文；YC 平台岗位与已核实的雇主官方 JD 分开标记。
   - id: techcrunch
     name: TechCrunch Startups
     url: https://techcrunch.com/category/startups/
-    mode: restricted
+    mode: browser_session
     policy_url: https://techcrunch.com/robots.txt
-    reason: robots 对 ChatGPT-User / GPTBot 全站 Disallow；等待获准订阅或用户提供线索。
+    reason: 内置浏览器读取新闻列表和文章正文；保留实际时间与截断范围，再沿公开链接研究公司。
   - id: itjuzi
     name: IT桔子创投电报
     url: https://www.itjuzi.com/bulletin
-    mode: official_free_api
-    policy_url: https://www.itjuzi.com/ai_skill/telegram
-    reason: 仅官方无 Token 今日摘要；非完整历史。空窗口不得当作网页没有快讯。
+    mode: browser_session
+    user_deferred: true
+    deferred_reason: 用户要求暂略过；当前内置浏览器为空白，原因未确定。待用户恢复后再扫描。
+    reason: 仅内置浏览器网页；登录、验证、会员限制或空白页分别记录，禁止免费 API 回退。
   - id: crv
     name: CRV Companies
-    url: https://www.crv.com/companies
-    requested_url: https://www.crv.com/companies?category=featured
-    mode: public_directory
-    parser: crv
+    url: https://www.crv.com/companies?category=featured
+    mode: browser_session
     policy_url: https://www.crv.com/robots.txt
-    reason: 公开 All 名录，保留 Featured 子集；robots 明确允许 search / ai-input。
+    reason: 内置浏览器先读用户指定的 Featured，再从页面切换 All 补充；两个视图分别计数。
   - id: sequoia-portfolio
     name: Sequoia Companies
     url: https://sequoiacap.com/our-companies?spotlight=no
-    mode: public_directory
-    parser: sequoia
+    mode: browser_session
     policy_url: https://sequoiacap.com/legal
-    reason: 个人研究用途；读取官网明确发布的搜索索引，标明与 All 表格的对照范围。
+    reason: 内置浏览器切换 All Companies、加载后页并核对表格字段；不读取搜索索引替代页面。
   - id: mindworks
     name: MindWorks 概念资本
     url: https://sc.mindworks.vc/portfolio
-    mode: public_directory
-    parser: mindworks
+    mode: browser_session
     policy_url: https://sc.mindworks.vc/robots.txt
-    reason: 公开名录与详情；不将隐藏的退出标签作为公司状态。
+    reason: 内置浏览器读取列表、筛选与详情；不将隐藏的退出标签作为公司状态。
   - id: sourcecode
     name: 源码资本成员企业
     url: https://sourcecodecap.com/companies/
-    mode: public_directory
-    parser: sourcecode
+    mode: browser_session
     policy_url: https://sourcecodecap.com/terms/
-    reason: 公开公司介绍与可展开官网回链；资本机构自身招聘不算被投公司岗位。
+    reason: 内置浏览器点击公司标志后读介绍与官网回链；资本机构自身招聘不算被投公司岗位。

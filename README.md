@@ -34,8 +34,10 @@ USCIS, PostgreSQL, and Docker runtime dependencies are disabled.
 Use `./bin/career-workbench start` to run only the local workbench, then open
 `http://127.0.0.1:8501`. `status`, `stop`, `restart`, and `logs` manage this service.
 
-The daily workflow combines public startup directories, official employer jobs, and locally
-imported research. It reads up to 20 companies per source per round and prepares evidence for
+The daily workflow reads the eight startup/VC entrances and their company/job pages through
+Codex's in-app browser, combining those observations with existing employer jobs and local research.
+The CLI imports browser evidence without HTTP/API fallbacks. It reads up to 20 companies per source
+per round and prepares evidence for
 a Codex review; the reviewed daily brief contains at most 10 recommendations across all sources.
 Restricted and incomplete sources remain visible. Research, internships, current jobs, and
 explicit co-founder invitations retain their separate evidence boundaries.
